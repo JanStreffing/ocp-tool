@@ -25,6 +25,11 @@ To function the scrip therefore needs the following input files:
 4) Runoff-mapper input files (runoff_maps.nc) file containing default 
     drainage basin and arrival point fields. This fileset is part of the 
     EC-Earth input files and available from: 
+        
+
+If you have trouble getting this tool to work in your python environment
+you may try loading the environment.yaml with: 
+    conda env create -f environment.yml
 
 
 @author: Jan Streffing (jan.streffing@awi.de), August 2019
@@ -37,6 +42,7 @@ To function the scrip therefore needs the following input files:
 # Loadin modules
 from __future__ import division
 import os 
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -56,17 +62,24 @@ longline = ' \n ==================================================  \n'
 
 
 
-def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid):
+def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type):
     '''
     This function reads the reduced gaussian gridfile and returns it as a raw 
     field
     '''
     
-    if 1: # linear truncation (T = NN * 2 - 1)
+
+
+        
+    if truncation_type == 'linear':
+        # linear truncation (T = NN * 2 - 1)
         NN = res_num/2 + 0.5
-    elif 0:
-        NN = res_num/4 + 0.25
-    grid_txt = '%s/n%d_reduced.txt' % (input_path_reduced_grid,NN)
+        grid_txt = '%s/n%d_reduced.txt' % (input_path_reduced_grid,NN)
+    elif truncation_type == 'cubic-octahedral':
+        # cubic octahedral truncation (T = NN - 1)
+        NN = res_num + 1
+        grid_txt = '%s/o%d_reduced.txt' % (input_path_reduced_grid,NN)
+
     print(' Read grid from file: %s ' % (grid_txt,) ) 
    
     print(longline)
@@ -79,7 +92,7 @@ def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid):
 
 
 
-def extract_grid_data(lines,NN):
+def extract_grid_data(lines):
     '''
     This function takes the raw reduced gaussian coordinate list and returns 
     coordinate and neighbour distrance lists for latitude and 
@@ -97,16 +110,13 @@ def extract_grid_data(lines,NN):
         # read latitude number, number of longitudes for red. Gaussian and regular Gauss grids
         # convert from strings to floats
         print(line)
-        if NN == 320:
-            [lat_num, red_points, oct_points, reg_points, lat] = [float(z) for z in line.split()]
-        else:
-            [lat_num, red_points, reg_points, lat] = [float(z) for z in line.split()]
+        [lat_num, red_points, reg_points, lat] = [float(z) for z in line.split()]
          
         # longitudes for reduced Gaussian grid
         dlon = 360./red_points
-        lons = np.arange(0,360,dlon)
+        #The -0.000000001 deals with rounding errors a la 360./644*360=359.9999999999994
+        lons = np.arange(0,360-0.000000001,dlon) 
         numlons_list.append(int(red_points))
-      
         dlon_list.append(dlon)
         lat_list.append(lat)
       
@@ -211,7 +221,7 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
 def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
     '''
     This function calculates the area of the gridcells based on the center 
-    values and saves in into a float32 array with oasis3-mct compatible 
+    values and saves them into a float32 array with oasis3-mct compatible 
     structure
     '''
 
@@ -332,6 +342,12 @@ def read_lake(res_num, input_path_lake):
     return (lakes, cl_id)
 
 def autoselect_basins(grid_name_oce):
+    
+    '''
+    This function selects the list of basins that are to be removed from the 
+    OpenIFS land sea mask based on a given ocean grid names.
+    '''
+    
     if grid_name_oce == 'CORE2':
         manual_basin_removal = ['caspian-sea', 'black-sea', 'white-sea', 'gulf-of-ob', 
                                 'persian-gulf', 'coronation-queen-maude']
@@ -339,6 +355,8 @@ def autoselect_basins(grid_name_oce):
         manual_basin_removal = ['caspian-sea']
     
     return manual_basin_removal
+
+
 
 def modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id,
                lons_list, center_lats, center_lons):
@@ -430,6 +448,11 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
         
         
 def plotting_lsm(res_num, lsm_binary, center_lats, center_lons):
+    
+    '''
+    This function plots the final land sea mask
+    '''
+    
     fig3 = plt.figure(figsize=(12, 7))
     ax3  = fig3.add_subplot(111)
     xpts = center_lons[lsm_binary<0.5]
@@ -440,15 +463,15 @@ def plotting_lsm(res_num, lsm_binary, center_lats, center_lons):
     
 
     
-def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid):
-    '''
+def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type):
 
+    '''
     This function generates coordinate and areas fields based on
     the full and reduced gaussian gridfiles for a given truncation number. 
     '''
 
-    lines, NN = read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid)
-    lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data(lines, NN)
+    lines, NN = read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
+    lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data(lines)
     center_lats, center_lons, crn_lats, crn_lons = calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list, lat_list)
     gridcell_area = calculate_area(center_lons, numlons_list, dlon_list, lat_list)
 
@@ -769,25 +792,17 @@ if __name__ == '__main__':
     Please configure as needed.
     '''
     
-    # Input file directories. Place files in appropriate subfolders or modify
-    input_path_reduced_grid = 'input/gaussian_grids_reduced/'
-    input_path_full_grid = 'input/gaussian_grids_full/'
-    input_path_oifs = 'input/openifs_input_default/'
-    input_path_runoff = 'input/runoff_map_default/'
-    input_path_lake = 'input/lakefiles/'
-    
-    # Output file directories.
-    output_path_oifs = 'output/openifs_input_modified/' 
-    output_path_runoff = 'output/runoff_map_modified/' 
-    output_path_oasis = 'output/oasis_mct3_input/' 
-    
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
     resolution_list = [159]
     
+    # Choose type of trucation. linear or cubic-octahedral
+    truncation_type = 'cubic-octahedral'
+    
     # OpenIFS experiment name. This 4 digit code is part of the name of the 
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'h6mv'
+    #exp_name_oifs = 'h6mv' #default for linear
+    exp_name_oifs = 'h9wu'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of 
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50 
@@ -812,10 +827,28 @@ if __name__ == '__main__':
     
     # Find working directory
     dir_path = os.path.dirname(os.path.realpath(__file__))
+    
+        # Input file directories. Place files in appropriate subfolders or modify
+    if truncation_type == 'cubic-octahedral':
+        input_path_reduced_grid = 'input/gaussian_grids_octahedral_reduced/'
+        input_path_lake = 'input/lakefiles/cubic_octahedral/'
+    elif truncation_type == 'linear':
+        input_path_reduced_grid = 'input/gaussian_grids_linear_reduced/'
+        input_path_lake = 'input/lakefiles/linear/'
+    else:
+        sys.exit('truncation type not recognized')
+    input_path_full_grid = 'input/gaussian_grids_full/'
+    input_path_oifs = 'input/openifs_input_default/'
+    input_path_runoff = 'input/runoff_map_default/'
+    
+    # Output file directories.
+    output_path_oifs = 'output/openifs_input_modified/' 
+    output_path_runoff = 'output/runoff_map_modified/' 
+    output_path_oasis = 'output/oasis_mct3_input/'
 
     # Loop over atmosphere resolutions. Todo: select correct exp_name_oifs 
     for res_num in resolution_list:
-        center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN = generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid)
+        center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN = generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
         lsm_binary = process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, num_fields, input_path_lake, manual_basin_removal ,lons_list, center_lats, center_lons)
         write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary, NN, input_path_runoff)
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff, grid_name_oce, manual_basin_removal)
