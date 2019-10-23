@@ -487,10 +487,8 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
 
     for filebase in ['grids','areas','masks']:
         filename = '%s/%s%s.nc' % (dir_path,output_path_oasis,filebase)
-        if os.path.exists(filename):
-            os.remove(filename)
         print('Writing file: %s ' % (filename,))
-        nc = Dataset(filename,'w')
+        nc = Dataset(filename, 'w', clobber=True)
 
         # For OpenIFS + NEMO + Runoffmapper we need two atmosphere grids:
         # atmo: used for atm->ocn remapping (to find ocean)
