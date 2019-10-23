@@ -494,7 +494,7 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
         # atmo: used for atm->ocn remapping (to find ocean)
         # atmr: used for atm->runoff remapping (to find land)
 
-        for grids_name in ['A'+str(int(NN)).zfill(3),'L'+str(int(NN)).zfill(3),'R'+str(int(NN)).zfill(3)]:
+        for grids_name in ('{}{:03}'.format(s, int(NN)) for s in ('A', 'L', 'R')):
 
             # OASIS requires certain names for the dimensions etc
             print(' Write lons, lats, corner points for grid: %s ' % (grids_name,), '(T%s)' % (res_num,))
@@ -550,10 +550,12 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
                 id_cla.valid_max = crn_lats.max()
 
             elif filebase == 'masks':
-                if grids_name == 'A'+str(int(NN)).zfill(3) or grids_name == 'L'+str(int(NN)).zfill(3):
+                if grids_name.startswith('A') or grids_name.startswith('L'):
                     id_msk[:,:] = lsm_binary[:,:]
-                elif grids_name == 'R'+str(int(NN)).zfill(3):
+                elif grids_name.startswith('R'):
                     id_msk[:,:] = np.abs(lsm_binary[:,:] - 1)
+                else:
+                    raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
             elif filebase == 'areas':
                 id_area[:,:] = gridcell_area[:,:]
