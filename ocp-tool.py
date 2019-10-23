@@ -360,44 +360,41 @@ def modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id,
         if lakes[cl_id][i] > 0.1:
             gribfield_mod[slt_id][i] = 6
             gribfield_mod[lsm_id][i] = 1
-    print('Removing: ',manual_basin_removal)
-    if manual_basin_removal:
-        num_basin = len(manual_basin_removal)
-    else:
-        num_basin = 0
-    for i in range(num_basin):
 
-        if manual_basin_removal[i] == 'caspian-sea':
+    print('Removing: ',manual_basin_removal)
+    for basin in manual_basin_removal:
+
+        if basin == 'caspian-sea':
             for ia in range(0,len(lons_list)):
                if center_lats[0,ia] > 36 and center_lats[0,ia] < 47 and center_lons[0,ia] > 46 and center_lons[0,ia] < 56:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
-        if manual_basin_removal[i] == 'black-sea':
+        if basin == 'black-sea':
             for ia in range(0,len(lons_list)):
                if center_lats[0,ia] > 40.5 and center_lats[0,ia] < 48 and center_lons[0,ia] > 27 and center_lons[0,ia] < 43:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
-        if manual_basin_removal[i] == 'white-sea':
+        if basin == 'white-sea':
             for ia in range(0,len(lons_list)):
                if center_lats[0,ia] > 63 and center_lats[0,ia] < 68.5 and center_lons[0,ia] > 31 and center_lons[0,ia] < 42:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
-        if manual_basin_removal[i] == 'gulf-of-ob':
+        if basin == 'gulf-of-ob':
             for ia in range(0,len(lons_list)):
                if center_lats[0,ia] > 65 and center_lats[0,ia] < 71 and center_lons[0,ia] > 70 and center_lons[0,ia] < 79:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
-        if manual_basin_removal[i] == 'persian-gulf':
+        if basin == 'persian-gulf':
             for ia in range(0,len(lons_list)):
                if center_lats[0,ia] > 21 and center_lats[0,ia] < 30 and center_lons[0,ia] > 47 and center_lons[0,ia] < 59:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
-        if manual_basin_removal[i] == 'coronation-queen-maude':
+        if basin == 'coronation-queen-maude':
             for ia in range(0,len(lons_list)):
                if center_lats[0,ia] > 48 and center_lats[0,ia] < 55 and center_lons[0,ia] > -102 and center_lons[0,ia] < -94:
                   gribfield_mod[lsm_id][ia]=1
@@ -609,12 +606,9 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
     lons = rnffile.variables[u'lon'][:]
     lats = rnffile.variables[u'lat'][:]
 
-    if manual_basin_removal:
-        num_basin = len(manual_basin_removal)
-    else:
-        num_basin = 0
-    for i in range(num_basin):
-        if manual_basin_removal[i] == 'caspian-sea':
+    for basin in manual_basin_removal:
+
+        if basin == 'caspian-sea':
             for lo in range(0,len(lons)):
                 if lons[lo] > 46 and lons[lo] < 56:
                     for la in range(0,len(lats)):
@@ -630,8 +624,7 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                             if arrival[la,lo] !=-1:
                                 arrival[la,lo]=18
 
-
-        if manual_basin_removal[i] == 'black-sea':
+        if basin == 'black-sea':
             for lo in range(0,len(lons)):
                 #removing old basin
                 if lons[lo] > 27 and lons[lo] < 43:
@@ -726,19 +719,15 @@ def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
     RnfA = oasis.variables[u'RnfA.msk'][:]
     RnfO = oasis.variables[u'RnfO.msk'][:]
 
-    if manual_basin_removal:
-        num_basin = len(manual_basin_removal)
-    else:
-        num_basin = 0
-    for i in range(num_basin):
-        if manual_basin_removal[i] == 'caspian-sea':
+    for basin in manual_basin_removal:
+
+        if basin == 'caspian-sea':
             for lo in range(0,len(lons)):
                 if lons[lo] > 46 and lons[lo] < 56:
                     for la in range(0,len(lats)):
                         if lats[la] > 36 and lats[la] < 47:
                             RnfA[la,lo]=0
                             RnfO[la,lo]=1
-
 
     # Saving altered runoff mapper lsm
     oasis.variables[u'RnfA.msk'][:] = RnfA
