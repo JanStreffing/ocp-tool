@@ -110,10 +110,10 @@ def extract_grid_data(lines):
         # read latitude number, number of longitudes for red. Gaussian and regular Gauss grids
         # convert from strings to floats
         print(line)
-        [lat_num, red_points, reg_points, lat] = [float(z) for z in line.split()]
+        _, red_points, _, lat = (float(z) for z in line.split())
          
         # longitudes for reduced Gaussian grid
-        dlon = 360./red_points
+        dlon = float(360)/red_points
         #The -0.000000001 deals with rounding errors a la 360./644*360=359.9999999999994
         lons = np.arange(0,360-0.000000001,dlon) 
         numlons_list.append(int(red_points))
@@ -121,10 +121,9 @@ def extract_grid_data(lines):
         lat_list.append(lat)
       
         # set longitudes/latitudes for reduced Gaussian grid on this latitude
-        for i in range(0,lons.shape[0]):
-            lons_list.append(lons[i])
-            lats_list.append(lat)
-            gridsize += 1
+        lons_list.extend(lons)
+        lats_list.extend([lat]*len(lons))
+        gridsize += len(lons)
       
     return (lons_list, lats_list, numlons_list, dlon_list, lat_list)
        
@@ -302,7 +301,7 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
                 
             nres = grib_get(gid[i],'N')
             gribfield[i] = grib_get_values(gid[i]) 
-        f.close
+
     return (gribfield, lsm_id, slt_id, gid)
          
 
@@ -338,7 +337,7 @@ def read_lake(res_num, input_path_lake):
 
             nres = grib_get(gid[i],'N')
             lakes[i] = grib_get_values(gid[i]) 
-        f.close
+
     return (lakes, cl_id)
 
 def autoselect_basins(grid_name_oce):
@@ -443,8 +442,6 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
             grib_set_values(gid[i],gribfield_mod[i])
             grib_write(gid[i],f)
             grib_release(gid[i])
-        f.close
-        
         
         
 def plotting_lsm(res_num, lsm_binary, center_lats, center_lons):
