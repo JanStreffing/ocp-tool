@@ -337,12 +337,12 @@ def autoselect_basins(grid_name_oce):
     '''
 
     if grid_name_oce == 'CORE2':
-        manual_basin_removal = ['caspian-sea', 'black-sea', 'white-sea', 'gulf-of-ob',
-                                'persian-gulf', 'coronation-queen-maude']
-    if grid_name_oce == 'MR':
-        manual_basin_removal = ['caspian-sea']
-
-    return manual_basin_removal
+        return ['caspian-sea', 'black-sea', 'white-sea', 'gulf-of-ob',
+                'persian-gulf', 'coronation-queen-maude']
+    elif grid_name_oce == 'MR':
+        return ['caspian-sea']
+    else:
+        return []
 
 
 def modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id,
@@ -786,7 +786,6 @@ if __name__ == '__main__':
     # 'gulf-of-ob', 'persian-gulf', 'coronation-queen-maude']
     # If you have chosen a known grid_name_oce the basins will be selected
     # automatically
-    manual_basin_removal = []
     manual_basin_removal = autoselect_basins(grid_name_oce)
 
     # Find working directory
