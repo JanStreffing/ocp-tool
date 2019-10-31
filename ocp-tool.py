@@ -607,39 +607,39 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
     for basin in manual_basin_removal:
 
         if basin == 'caspian-sea':
-            for lo in range(len(lons)):
-                if lons[lo] > 46 and lons[lo] < 56:
-                    for la in range(len(lats)):
-                        if lats[la] > 36 and lats[la] < 47:
+            for lo, lon in enumerate(lons):
+                if lon > 46 and lon < 56:
+                    for la, lat in enumerate(lats):
+                        if lat > 36 and lat < 47:
                             if drainage[la, lo] == -2:
                                 drainage[la, lo] = 18
                                 arrival[la, lo] = -1
                 # adding artifical arrival points in the amazon discharge area
                 # to close the global water budget
-                if lons[lo] > 313 and lons[lo] < 314.5:
-                    for la in range(len(lats)):
-                        if lats[la] > 1 and lats[la] < 2:
+                if lon > 313 and lon < 314.5:
+                    for la, lat in enumerate(lats):
+                        if lat > 1 and lat < 2:
                             if arrival[la, lo] != -1:
                                 arrival[la, lo] = 18
 
         if basin == 'black-sea':
-            for lo in range(len(lons)):
+            for lo, lon in enumerate(lons):
                 #removing old basin
-                if lons[lo] > 27 and lons[lo] < 43:
-                    for la in range(len(lats)):
-                        if lats[la] > 40.5 and lats[la] < 48:
+                if lon > 27 and lon < 43:
+                    for la, lats in enumerate(lats):
+                        if lat > 40.5 and lat < 48:
                             if drainage[la, lo] == -2:
                                 drainage[la, lo] = 23
                                 arrival[la, lo] = -1
                 # adding new arrival points
-                if lons[lo] > 25 and lons[lo] < 26.5:
-                    for la in range(len(lats)):
-                        if lats[la] > 38.5 and lats[la] < 41:
+                if lon > 25 and lon < 26.5:
+                    for la, lat in enumerate(lats):
+                        if lat > 38.5 and lat < 41:
                             if arrival[la, lo] != -1:
                                 arrival[la, lo] = 23
-                if lons[lo] > 23.5 and lons[lo] < 25:
-                    for la in range(len(lats)):
-                        if lats[la] > 38.5 and lats[la] < 41:
+                if lon > 23.5 and lon < 25:
+                    for la, lat in enumerate(lats):
+                        if lat > 38.5 and lat < 41:
                             if arrival[la, lo] != -1:
                                 arrival[la, lo] = 28
 
@@ -720,10 +720,10 @@ def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
     for basin in manual_basin_removal:
 
         if basin == 'caspian-sea':
-            for lo in range(len(lons)):
-                if lons[lo] > 46 and lons[lo] < 56:
-                    for la in range(len(lats)):
-                        if lats[la] > 36 and lats[la] < 47:
+            for lo, lon in enumerate(lons):
+                if lon > 46 and lon < 56:
+                    for la, lat in enumerate(lats):
+                        if lat > 36 and lat < 47:
                             RnfA[la, lo] = 0
                             RnfO[la, lo] = 1
 
