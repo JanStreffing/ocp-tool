@@ -35,21 +35,21 @@ you may try loading the environment.yaml with:
 @author: Jan Streffing (jan.streffing@awi.de), August 2019
 '''
 
-#-----------------------------------------------------------------------------
-# Setup
-#-----------------------------------------------------------------------------
-
-# Loadin modules
 from __future__ import division
+
 import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import cm
-from gribapi import *
+import gribapi
+
 from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 from shutil import copy2
+
+#-----------------------------------------------------------------------------
+# Setup
+#-----------------------------------------------------------------------------
 
 # Setting constants
 earth_radius = 6371. * 1e3 #[m]
@@ -274,24 +274,24 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
         keys = ['N','shortName']
 
         for i in range(0,num_fields):
-            gid[i] = grib_new_from_file(f)
+            gid[i] = gribapi.grib_new_from_file(f)
             if gid[i] is None:
                 break
 
             for key in keys:
-                if not grib_is_defined(gid[i], key):
+                if not gribapi.grib_is_defined(gid[i], key):
                     raise ValueError("Key '%s' was not defined" % key)
-                print('%s=%s' % (key, grib_get(gid[i], key)))
+                print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
 
-            shortName = grib_get(gid[i],'shortName')
+            shortName = gribapi.grib_get(gid[i],'shortName')
 
             if shortName == 'lsm':
                 lsm_id = i
             if shortName == 'slt':
                 slt_id = i
 
-            nres = grib_get(gid[i],'N')
-            gribfield[i] = grib_get_values(gid[i])
+            nres = gribapi.grib_get(gid[i],'N')
+            gribfield[i] = gribapi.grib_get_values(gid[i])
 
     return (gribfield, lsm_id, slt_id, gid)
 
@@ -310,22 +310,22 @@ def read_lake(res_num, input_path_lake):
         keys = ['N','shortName']
 
         for i in range(0,2):
-            gid[i] = grib_new_from_file(f)
+            gid[i] = gribapi.grib_new_from_file(f)
             if gid[i] is None:
                 break
 
             for key in keys:
-                if not grib_is_defined(gid[i], key):
+                if not gribapi.grib_is_defined(gid[i], key):
                     raise ValueError("Key '%s' was not defined" % key)
-                print('%s=%s' % (key, grib_get(gid[i], key)))
+                print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
 
-            shortName = grib_get(gid[i],'shortName')
+            shortName = gribapi.grib_get(gid[i],'shortName')
 
             if shortName == 'cl':
                 cl_id = i
 
-            nres = grib_get(gid[i],'N')
-            lakes[i] = grib_get_values(gid[i])
+            nres = gribapi.grib_get(gid[i],'N')
+            lakes[i] = gribapi.grib_get_values(gid[i])
 
     return (lakes, cl_id)
 
@@ -421,9 +421,9 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
 
     with open(output_file_oifs,'r+') as f:
         for i in range(0,num_fields):
-            grib_set_values(gid[i],gribfield_mod[i])
-            grib_write(gid[i],f)
-            grib_release(gid[i])
+            gribapi.grib_set_values(gid[i],gribfield_mod[i])
+            gribapi.grib_write(gid[i],f)
+            gribapi.grib_release(gid[i])
 
 
 def plotting_lsm(res_num, lsm_binary, center_lats, center_lons):
@@ -675,7 +675,7 @@ def plotting_runoff(drainage, arrival, lons, lats):
     xi, yi = m(lon, lat)
 
     fig1 = plt.figure(figsize=(12,8))
-    cmap=cm.flag
+    cmap=plt.cm.flag
     cs = m.pcolor(xi,yi,arrival_cat,cmap=cmap)
     m.drawcoastlines()
     m.drawparallels(np.arange(-90.,120.,45.))
