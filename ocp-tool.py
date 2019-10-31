@@ -800,9 +800,29 @@ if __name__ == '__main__':
 
     # Loop over atmosphere resolutions. Todo: select correct exp_name_oifs
     for res_num in resolution_list:
-        center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN = generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
-        lsm_binary = process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, num_fields, input_path_lake, manual_basin_removal ,lons_list, center_lats, center_lons)
-        write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary, NN, input_path_runoff)
-        lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff, grid_name_oce, manual_basin_removal)
-        modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats, output_path_oasis)
+
+        center_lats, center_lons, \
+        crn_lats, crn_lons, \
+        gridcell_area, lons_list, \
+        NN = generate_coord_area(res_num,
+                                 input_path_reduced_grid, input_path_full_grid,
+                                 truncation_type)
+
+        lsm_binary = process_lsm(res_num, input_path_oifs, output_path_oifs,
+                                 exp_name_oifs, grid_name_oce, num_fields,
+                                 input_path_lake, manual_basin_removal,
+                                 lons_list,
+                                 center_lats, center_lons)
+
+        write_oasis_files(res_num,
+                          output_path_oasis, dir_path, grid_name_oce,
+                          center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
+                          lsm_binary, NN, input_path_runoff)
+
+        lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
+                                       grid_name_oce, manual_basin_removal)
+
+        modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
+                          output_path_oasis)
+
         plotting_lsm(res_num, lsm_binary, center_lats, center_lons)
