@@ -182,7 +182,7 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
             dlat_n = (lat_list[ii-1] - lat) / 2.
             dlat_s = (lat - lat_list[ii+1]) / 2.
 
-    for jj in range(0,ni):
+    for jj in range(ni):
         # corner 1: north-east
         crn_lons[0,0,kk] = lons[jj] + dlon/2.
         crn_lats[0,0,kk] = lat + dlat_n/2.
@@ -252,7 +252,7 @@ def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
         dy = (dlat_n + dlat_s) * np.pi/180. * earth_radius
         area = dx * dy
 
-        for jj in range(0,ni):
+        for jj in range(ni):
             gridcell_area[0,kk] = area
             kk += 1
 
@@ -271,7 +271,7 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     with open(input_file_oifs,'r+') as f:
         keys = ['N','shortName']
 
-        for i in range(0,num_fields):
+        for i in range(num_fields):
             gid[i] = gribapi.grib_new_from_file(f)
             if gid[i] is None:
                 break
@@ -307,7 +307,7 @@ def read_lake(res_num, input_path_lake):
     with open(input_file_lake,'r+') as f:
         keys = ['N','shortName']
 
-        for i in range(0,2):
+        for i in range(2):
             gid[i] = gribapi.grib_new_from_file(f)
             if gid[i] is None:
                 break
@@ -363,37 +363,37 @@ def modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id,
     for basin in manual_basin_removal:
 
         if basin == 'caspian-sea':
-            for ia in range(0,len(lons_list)):
+            for ia in range(len(lons_list)):
                if center_lats[0,ia] > 36 and center_lats[0,ia] < 47 and center_lons[0,ia] > 46 and center_lons[0,ia] < 56:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
         if basin == 'black-sea':
-            for ia in range(0,len(lons_list)):
+            for ia in range(len(lons_list)):
                if center_lats[0,ia] > 40.5 and center_lats[0,ia] < 48 and center_lons[0,ia] > 27 and center_lons[0,ia] < 43:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
         if basin == 'white-sea':
-            for ia in range(0,len(lons_list)):
+            for ia in range(len(lons_list)):
                if center_lats[0,ia] > 63 and center_lats[0,ia] < 68.5 and center_lons[0,ia] > 31 and center_lons[0,ia] < 42:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
         if basin == 'gulf-of-ob':
-            for ia in range(0,len(lons_list)):
+            for ia in range(len(lons_list)):
                if center_lats[0,ia] > 65 and center_lats[0,ia] < 71 and center_lons[0,ia] > 70 and center_lons[0,ia] < 79:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
         if basin == 'persian-gulf':
-            for ia in range(0,len(lons_list)):
+            for ia in range(len(lons_list)):
                if center_lats[0,ia] > 21 and center_lats[0,ia] < 30 and center_lons[0,ia] > 47 and center_lons[0,ia] < 59:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
 
         if basin == 'coronation-queen-maude':
-            for ia in range(0,len(lons_list)):
+            for ia in range(len(lons_list)):
                if center_lats[0,ia] > 48 and center_lats[0,ia] < 55 and center_lons[0,ia] > -102 and center_lons[0,ia] < -94:
                   gribfield_mod[lsm_id][ia]=1
                   gribfield_mod[slt_id][ia]=6
@@ -418,7 +418,7 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
     copy2(input_file_oifs, output_file_oifs)
 
     with open(output_file_oifs,'r+') as f:
-        for i in range(0,num_fields):
+        for i in range(num_fields):
             gribapi.grib_set_values(gid[i],gribfield_mod[i])
             gribapi.grib_write(gid[i],f)
             gribapi.grib_release(gid[i])
@@ -607,9 +607,9 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
     for basin in manual_basin_removal:
 
         if basin == 'caspian-sea':
-            for lo in range(0,len(lons)):
+            for lo in range(len(lons)):
                 if lons[lo] > 46 and lons[lo] < 56:
-                    for la in range(0,len(lats)):
+                    for la in range(len(lats)):
                         if lats[la] > 36 and lats[la] < 47:
                             if drainage[la,lo] == -2:
                                 drainage[la,lo]=18
@@ -617,28 +617,28 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                 # adding artifical arrival points in the amazon discharge area
                 # to close the global water budget
                 if lons[lo] > 313 and lons[lo] < 314.5:
-                    for la in range(0,len(lats)):
+                    for la in range(len(lats)):
                         if lats[la] > 1 and lats[la] < 2:
                             if arrival[la,lo] !=-1:
                                 arrival[la,lo]=18
 
         if basin == 'black-sea':
-            for lo in range(0,len(lons)):
+            for lo in range(len(lons)):
                 #removing old basin
                 if lons[lo] > 27 and lons[lo] < 43:
-                    for la in range(0,len(lats)):
+                    for la in range(len(lats)):
                         if lats[la] > 40.5 and lats[la] < 48:
                             if drainage[la,lo] == -2:
                                 drainage[la,lo]=23
                                 arrival[la,lo]=-1
                 # adding new arrival points
                 if lons[lo] > 25 and lons[lo] < 26.5:
-                    for la in range(0,len(lats)):
+                    for la in range(len(lats)):
                         if lats[la] > 38.5 and lats[la] < 41:
                             if arrival[la,lo] !=-1:
                                 arrival[la,lo]=23
                 if lons[lo] > 23.5 and lons[lo] < 25:
-                    for la in range(0,len(lats)):
+                    for la in range(len(lats)):
                         if lats[la] > 38.5 and lats[la] < 41:
                             if arrival[la,lo] !=-1:
                                 arrival[la,lo]=28
@@ -720,9 +720,9 @@ def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
     for basin in manual_basin_removal:
 
         if basin == 'caspian-sea':
-            for lo in range(0,len(lons)):
+            for lo in range(len(lons)):
                 if lons[lo] > 46 and lons[lo] < 56:
-                    for la in range(0,len(lats)):
+                    for la in range(len(lats)):
                         if lats[la] > 36 and lats[la] < 47:
                             RnfA[la,lo]=0
                             RnfO[la,lo]=1
