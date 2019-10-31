@@ -68,11 +68,11 @@ def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, trunc
     if truncation_type == 'linear':
         # linear truncation (T = NN * 2 - 1)
         NN = res_num/2 + 0.5
-        grid_txt = '%s/n%d_reduced.txt' % (input_path_reduced_grid,NN)
+        grid_txt = '%s/n%d_reduced.txt' % (input_path_reduced_grid, NN)
     elif truncation_type == 'cubic-octahedral':
         # cubic octahedral truncation (T = NN - 1)
         NN = res_num + 1
-        grid_txt = '%s/o%d_reduced.txt' % (input_path_reduced_grid,NN)
+        grid_txt = '%s/o%d_reduced.txt' % (input_path_reduced_grid, NN)
 
     print(' Read grid from file: %s ' % (grid_txt,) )
 
@@ -80,7 +80,7 @@ def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, trunc
     print(' Reading gridfiles for T%d ' % (res_num))
     print(longline)
 
-    fin = open(grid_txt,'r')
+    fin = open(grid_txt, 'r')
     lines = fin.readlines()
     return (lines, NN)
 
@@ -108,7 +108,7 @@ def extract_grid_data(lines):
         # longitudes for reduced Gaussian grid
         dlon = float(360)/red_points
         #The -0.000000001 deals with rounding errors a la 360./644*360=359.9999999999994
-        lons = np.arange(0,360-0.000000001,dlon)
+        lons = np.arange(0, 360-0.000000001, dlon)
         numlons_list.append(int(red_points))
         dlon_list.append(dlon)
         lat_list.append(lat)
@@ -132,16 +132,16 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
 
     # OASIS requires grids to be 2D, but IFS grid is 1D, so we give it an
     # extra dimension.
-    center_lons = np.array(lons_list,dtype='float32')[np.newaxis,:]
-    center_lats = np.array(lats_list,dtype='float32')[np.newaxis,:]
+    center_lons = np.array(lons_list, dtype='float32')[np.newaxis, :]
+    center_lats = np.array(lats_list, dtype='float32')[np.newaxis, :]
     nx = center_lons.shape[1]
     ny = 1
 
-    print(' Size of grid: nx = %d, ny = %d' % (nx,ny))
+    print(' Size of grid: nx = %d, ny = %d' % (nx, ny))
 
     # Now we calculate longitudes/latitudes of corner points for each grid cell
-    crn_lons = np.zeros((4,ny,nx))
-    crn_lats = np.zeros((4,ny,nx))
+    crn_lons = np.zeros((4, ny, nx))
+    crn_lats = np.zeros((4, ny, nx))
 
     kk = 0 # cell index
     for ii, ni in enumerate(numlons_list):
@@ -163,7 +163,7 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
 
         dlon = dlon_list[ii]
         lat  = lat_list[ii]
-        lons = np.arange(0,360,dlon)
+        lons = np.arange(0, 360, dlon)
 
         #     NP --- j=1 ---|--- j=2 ---|--- j=3 ---|--- j=n --- SP
         #                           <-dlat_n-> <-dlat_s->
@@ -184,24 +184,24 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
 
     for jj in range(ni):
         # corner 1: north-east
-        crn_lons[0,0,kk] = lons[jj] + dlon/2.
-        crn_lats[0,0,kk] = lat + dlat_n/2.
+        crn_lons[0, 0, kk] = lons[jj] + dlon/2.
+        crn_lats[0, 0, kk] = lat + dlat_n/2.
 
         # corner 2: north-west
-        crn_lons[1,0,kk] = lons[jj] - dlon/2.
-        crn_lats[1,0,kk] = lat + dlat_n/2.
+        crn_lons[1, 0, kk] = lons[jj] - dlon/2.
+        crn_lats[1, 0, kk] = lat + dlat_n/2.
 
         # corner 3: south-west
-        crn_lons[2,0,kk] = lons[jj] - dlon/2.
-        crn_lats[2,0,kk] = lat - dlat_s/2.
+        crn_lons[2, 0, kk] = lons[jj] - dlon/2.
+        crn_lats[2, 0, kk] = lat - dlat_s/2.
 
         # corner 4: south-east
-        crn_lons[3,0,kk] = lons[jj] + dlon/2.
-        crn_lats[3,0,kk] = lat - dlat_s/2.
+        crn_lons[3, 0, kk] = lons[jj] + dlon/2.
+        crn_lats[3, 0, kk] = lat - dlat_s/2.
 
         kk += 1
 
-    # Make sure that longitudes are [-180,180] and not [0,360]
+    # Make sure that longitudes are [-180, 180] and not [0, 360]
     center_lons = np.where( center_lons > 180, center_lons - 360, center_lons )
     crn_lons    = np.where( crn_lons > 180, crn_lons - 360, crn_lons )
 
@@ -221,14 +221,14 @@ def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
     ny = 1
 
      # Now we calculate the cell area of each cell
-    gridcell_area = np.zeros((ny,nx))
+    gridcell_area = np.zeros((ny, nx))
 
     kk = 0 # cell index
     for ii, ni in enumerate(numlons_list):
 
         dlon = dlon_list[ii]
         lat  = lat_list[ii]
-        lons = np.arange(0,360,dlon)
+        lons = np.arange(0, 360, dlon)
 
         #     NP --- j=1 ---|--- j=2 ---|--- j=3 ---|--- j=n --- SP
         #                           <-dlat_n-> <-dlat_s->
@@ -253,7 +253,7 @@ def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
         area = dx * dy
 
         for jj in range(ni):
-            gridcell_area[0,kk] = area
+            gridcell_area[0, kk] = area
             kk += 1
 
     return(gridcell_area)
@@ -268,8 +268,8 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
     gid = [None] * num_fields
     gribfield = [None] * num_fields
-    with open(input_file_oifs,'r+') as f:
-        keys = ['N','shortName']
+    with open(input_file_oifs, 'r+') as f:
+        keys = ['N', 'shortName']
 
         for i in range(num_fields):
             gid[i] = gribapi.grib_new_from_file(f)
@@ -281,14 +281,14 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
                     raise ValueError("Key '%s' was not defined" % key)
                 print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
 
-            shortName = gribapi.grib_get(gid[i],'shortName')
+            shortName = gribapi.grib_get(gid[i], 'shortName')
 
             if shortName == 'lsm':
                 lsm_id = i
             if shortName == 'slt':
                 slt_id = i
 
-            nres = gribapi.grib_get(gid[i],'N')
+            nres = gribapi.grib_get(gid[i], 'N')
             gribfield[i] = gribapi.grib_get_values(gid[i])
 
     return (gribfield, lsm_id, slt_id, gid)
@@ -304,8 +304,8 @@ def read_lake(res_num, input_path_lake):
     input_file_lake = input_path_lake + 'clake_' + str(res_num)
     gid = [None] * 2
     lakes = [None] * 2
-    with open(input_file_lake,'r+') as f:
-        keys = ['N','shortName']
+    with open(input_file_lake, 'r+') as f:
+        keys = ['N', 'shortName']
 
         for i in range(2):
             gid[i] = gribapi.grib_new_from_file(f)
@@ -317,12 +317,12 @@ def read_lake(res_num, input_path_lake):
                     raise ValueError("Key '%s' was not defined" % key)
                 print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
 
-            shortName = gribapi.grib_get(gid[i],'shortName')
+            shortName = gribapi.grib_get(gid[i], 'shortName')
 
             if shortName == 'cl':
                 cl_id = i
 
-            nres = gribapi.grib_get(gid[i],'N')
+            nres = gribapi.grib_get(gid[i], 'N')
             lakes[i] = gribapi.grib_get_values(gid[i])
 
     return (lakes, cl_id)
@@ -352,55 +352,55 @@ def modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id,
     '''
 
     # Automatic lake removal with lakes mask
-    gribfield_mod=gribfield
+    gribfield_mod = gribfield
     # Soil class of removed lakes is SANDY CLAY LOAM
-    for i in np.arange (0,len(gribfield_mod[slt_id])-1):
+    for i in np.arange (0, len(gribfield_mod[slt_id])-1):
         if lakes[cl_id][i] > 0.1:
             gribfield_mod[slt_id][i] = 6
             gribfield_mod[lsm_id][i] = 1
 
-    print('Removing: ',manual_basin_removal)
+    print('Removing: ', manual_basin_removal)
     for basin in manual_basin_removal:
 
         if basin == 'caspian-sea':
             for ia in range(len(lons_list)):
-               if center_lats[0,ia] > 36 and center_lats[0,ia] < 47 and center_lons[0,ia] > 46 and center_lons[0,ia] < 56:
-                  gribfield_mod[lsm_id][ia]=1
-                  gribfield_mod[slt_id][ia]=6
+               if center_lats[0, ia] > 36 and center_lats[0, ia] < 47 and center_lons[0, ia] > 46 and center_lons[0, ia] < 56:
+                  gribfield_mod[lsm_id][ia] = 1
+                  gribfield_mod[slt_id][ia] = 6
 
         if basin == 'black-sea':
             for ia in range(len(lons_list)):
-               if center_lats[0,ia] > 40.5 and center_lats[0,ia] < 48 and center_lons[0,ia] > 27 and center_lons[0,ia] < 43:
-                  gribfield_mod[lsm_id][ia]=1
-                  gribfield_mod[slt_id][ia]=6
+               if center_lats[0, ia] > 40.5 and center_lats[0, ia] < 48 and center_lons[0, ia] > 27 and center_lons[0, ia] < 43:
+                  gribfield_mod[lsm_id][ia] = 1
+                  gribfield_mod[slt_id][ia] = 6
 
         if basin == 'white-sea':
             for ia in range(len(lons_list)):
-               if center_lats[0,ia] > 63 and center_lats[0,ia] < 68.5 and center_lons[0,ia] > 31 and center_lons[0,ia] < 42:
-                  gribfield_mod[lsm_id][ia]=1
-                  gribfield_mod[slt_id][ia]=6
+               if center_lats[0, ia] > 63 and center_lats[0, ia] < 68.5 and center_lons[0, ia] > 31 and center_lons[0, ia] < 42:
+                  gribfield_mod[lsm_id][ia] = 1
+                  gribfield_mod[slt_id][ia] = 6
 
         if basin == 'gulf-of-ob':
             for ia in range(len(lons_list)):
-               if center_lats[0,ia] > 65 and center_lats[0,ia] < 71 and center_lons[0,ia] > 70 and center_lons[0,ia] < 79:
-                  gribfield_mod[lsm_id][ia]=1
-                  gribfield_mod[slt_id][ia]=6
+               if center_lats[0, ia] > 65 and center_lats[0, ia] < 71 and center_lons[0, ia] > 70 and center_lons[0, ia] < 79:
+                  gribfield_mod[lsm_id][ia] = 1
+                  gribfield_mod[slt_id][ia] = 6
 
         if basin == 'persian-gulf':
             for ia in range(len(lons_list)):
-               if center_lats[0,ia] > 21 and center_lats[0,ia] < 30 and center_lons[0,ia] > 47 and center_lons[0,ia] < 59:
-                  gribfield_mod[lsm_id][ia]=1
-                  gribfield_mod[slt_id][ia]=6
+               if center_lats[0, ia] > 21 and center_lats[0, ia] < 30 and center_lons[0, ia] > 47 and center_lons[0, ia] < 59:
+                  gribfield_mod[lsm_id][ia] = 1
+                  gribfield_mod[slt_id][ia] = 6
 
         if basin == 'coronation-queen-maude':
             for ia in range(len(lons_list)):
-               if center_lats[0,ia] > 48 and center_lats[0,ia] < 55 and center_lons[0,ia] > -102 and center_lons[0,ia] < -94:
-                  gribfield_mod[lsm_id][ia]=1
-                  gribfield_mod[slt_id][ia]=6
+               if center_lats[0, ia] > 48 and center_lats[0, ia] < 55 and center_lons[0, ia] > -102 and center_lons[0, ia] < -94:
+                  gribfield_mod[lsm_id][ia] = 1
+                  gribfield_mod[slt_id][ia] = 6
 
     # lsm_binary in correct format for oasis3-mct file
     lsm_binary = gribfield_mod[lsm_id]
-    lsm_binary = lsm_binary[np.newaxis,:]
+    lsm_binary = lsm_binary[np.newaxis, :]
 
     return (lsm_binary, gribfield_mod)
 
@@ -417,10 +417,10 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
     output_file_oifs = output_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT_' + grid_name_oce
     copy2(input_file_oifs, output_file_oifs)
 
-    with open(output_file_oifs,'r+') as f:
+    with open(output_file_oifs, 'r+') as f:
         for i in range(num_fields):
-            gribapi.grib_set_values(gid[i],gribfield_mod[i])
-            gribapi.grib_write(gid[i],f)
+            gribapi.grib_set_values(gid[i], gribfield_mod[i])
+            gribapi.grib_write(gid[i], f)
             gribapi.grib_release(gid[i])
 
 
@@ -433,9 +433,9 @@ def plotting_lsm(res_num, lsm_binary, center_lats, center_lons):
     ax3  = fig3.add_subplot(111)
     xpts = center_lons[lsm_binary<0.5]
     ypts = center_lats[lsm_binary<0.5]
-    ax3.scatter(xpts,ypts,s=5)
+    ax3.scatter(xpts, ypts, s=5)
     figname = 'output/plots/land_points_T%d.png' % (res_num,)
-    fig3.savefig(figname,format='png')
+    fig3.savefig(figname, format='png')
 
 
 def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type):
@@ -454,7 +454,7 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
 
 def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
                 grid_name_oce, num_fields, input_path_lake,
-                manual_basin_removal ,lons_list, center_lats, center_lons):
+                manual_basin_removal, lons_list, center_lats, center_lons):
     '''
     This function first reads, modifies and finally saves the new land
     sea mask. Every step is mirrored for the soil type file as it has to be
@@ -463,7 +463,7 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
 
     gribfield, lsm_id, slt_id, gid = read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields)
     lakes,  cl_id = read_lake(res_num, input_path_lake)
-    lsm_binary, gribfield_mod = modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id ,lons_list, center_lats, center_lons)
+    lsm_binary, gribfield_mod = modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id, lons_list, center_lats, center_lons)
     write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, num_fields, gid)
     return (lsm_binary)
 
@@ -483,8 +483,8 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
     IFS always has 1 or 0, so it is the same as atmo.
     '''
 
-    for filebase in ['grids','areas','masks']:
-        filename = '%s/%s%s.nc' % (dir_path,output_path_oasis,filebase)
+    for filebase in ['grids', 'areas', 'masks']:
+        filename = '%s/%s%s.nc' % (dir_path, output_path_oasis, filebase)
         print('Writing file: %s ' % (filename,))
         nc = Dataset(filename, 'w', clobber=True)
 
@@ -500,10 +500,10 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
             yname = 'y_%s' % (grids_name,)
             lonname = '%s.lon' % (grids_name,)
             latname = '%s.lat' % (grids_name,)
-            nc.createDimension(xname,center_lons.shape[1])
-            nc.createDimension(yname,1)
-            id_lon = nc.createVariable(lonname, 'float64', (yname,xname))
-            id_lat = nc.createVariable(latname, 'float64', (yname,xname))
+            nc.createDimension(xname, center_lons.shape[1])
+            nc.createDimension(yname, 1)
+            id_lon = nc.createVariable(lonname, 'float64', (yname, xname))
+            id_lat = nc.createVariable(latname, 'float64', (yname, xname))
 
             # Not required, but makes grid info more readable
             id_lon.units = 'degrees_east'
@@ -516,32 +516,32 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
                 crnname = 'crn_%s' % (grids_name,)
                 cloname = '%s.clo' % (grids_name,)
                 claname = '%s.cla' % (grids_name,)
-                nc.createDimension(crnname,4)
-                id_clo = nc.createVariable(cloname, 'float64', (crnname,yname,xname))
-                id_cla = nc.createVariable(claname, 'float64', (crnname,yname,xname))
+                nc.createDimension(crnname, 4)
+                id_clo = nc.createVariable(cloname, 'float64', (crnname, yname, xname))
+                id_cla = nc.createVariable(claname, 'float64', (crnname, yname, xname))
 
          # Write land-sea masks to masks file
             elif filebase == 'masks':
                 mskname = '%s.msk' % (grids_name,)
-                id_msk = nc.createVariable(mskname,'int32', (yname,xname))
+                id_msk = nc.createVariable(mskname, 'int32', (yname, xname))
                 id_msk.valid_min = 0.
                 id_msk.valid_max = 1
 
          # Write grid cell area to areas file
             elif filebase == 'areas':
                 areaname = '%s.srf' % (grids_name,)
-                id_area = nc.createVariable(areaname,'float64',(yname,xname))
+                id_area = nc.createVariable(areaname, 'float64', (yname, xname))
 
-            id_lon[:,:] = center_lons[:,:]
-            id_lat[:,:] = center_lats[:,:]
+            id_lon[:, :] = center_lons[:, :]
+            id_lat[:, :] = center_lats[:, :]
             id_lon.valid_min = center_lons.min()
             id_lon.valid_max = center_lons.max()
             id_lat.valid_min = center_lats.min()
             id_lat.valid_max = center_lats.max()
 
             if filebase == 'grids':
-                id_clo[:,:,:] = crn_lons[:,:,:]
-                id_cla[:,:,:] = crn_lats[:,:,:]
+                id_clo[:, :, :] = crn_lons[:, :, :]
+                id_cla[:, :, :] = crn_lats[:, :, :]
                 id_clo.valid_min = crn_lons.min()
                 id_clo.valid_max = crn_lons.max()
                 id_cla.valid_min = crn_lats.min()
@@ -549,22 +549,22 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
 
             elif filebase == 'masks':
                 if grids_name.startswith('A') or grids_name.startswith('L'):
-                    id_msk[:,:] = lsm_binary[:,:]
+                    id_msk[:, :] = lsm_binary[:, :]
                 elif grids_name.startswith('R'):
-                    id_msk[:,:] = np.abs(lsm_binary[:,:] - 1)
+                    id_msk[:, :] = np.abs(lsm_binary[:, :] - 1)
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
             elif filebase == 'areas':
-                id_area[:,:] = gridcell_area[:,:]
+                id_area[:, :] = gridcell_area[:, :]
                 id_area.valid_min = gridcell_area.min()
                 id_area.valid_max = gridcell_area.max()
 
 
         # Copying runoff mapper grids and areas into oasis3-mct files
 
-        input_file_rnf = '%srunoff_%s.nc' % (input_path_runoff,filebase)
-        rnffile = Dataset(input_file_rnf,'r')
+        input_file_rnf = '%srunoff_%s.nc' % (input_path_runoff, filebase)
+        rnffile = Dataset(input_file_rnf, 'r')
 
         nc.setncatts(rnffile.__dict__)
         for name, dimension in rnffile.dimensions.iteritems():
@@ -594,7 +594,7 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
         os.remove(output_file_rnf)
     copy2(input_file_rnf, output_file_rnf)
 
-    rnffile = Dataset(output_file_rnf,'r+')
+    rnffile = Dataset(output_file_rnf, 'r+')
     print (rnffile.variables.keys())
 
     drainage = rnffile.variables[u'drainage_basin_id'][:]
@@ -611,16 +611,16 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                 if lons[lo] > 46 and lons[lo] < 56:
                     for la in range(len(lats)):
                         if lats[la] > 36 and lats[la] < 47:
-                            if drainage[la,lo] == -2:
-                                drainage[la,lo]=18
-                                arrival[la,lo]=-1
+                            if drainage[la, lo] == -2:
+                                drainage[la, lo] = 18
+                                arrival[la, lo] = -1
                 # adding artifical arrival points in the amazon discharge area
                 # to close the global water budget
                 if lons[lo] > 313 and lons[lo] < 314.5:
                     for la in range(len(lats)):
                         if lats[la] > 1 and lats[la] < 2:
-                            if arrival[la,lo] !=-1:
-                                arrival[la,lo]=18
+                            if arrival[la, lo] != -1:
+                                arrival[la, lo] = 18
 
         if basin == 'black-sea':
             for lo in range(len(lons)):
@@ -628,20 +628,20 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                 if lons[lo] > 27 and lons[lo] < 43:
                     for la in range(len(lats)):
                         if lats[la] > 40.5 and lats[la] < 48:
-                            if drainage[la,lo] == -2:
-                                drainage[la,lo]=23
-                                arrival[la,lo]=-1
+                            if drainage[la, lo] == -2:
+                                drainage[la, lo] = 23
+                                arrival[la, lo] = -1
                 # adding new arrival points
                 if lons[lo] > 25 and lons[lo] < 26.5:
                     for la in range(len(lats)):
                         if lats[la] > 38.5 and lats[la] < 41:
-                            if arrival[la,lo] !=-1:
-                                arrival[la,lo]=23
+                            if arrival[la, lo] != -1:
+                                arrival[la, lo] = 23
                 if lons[lo] > 23.5 and lons[lo] < 25:
                     for la in range(len(lats)):
                         if lats[la] > 38.5 and lats[la] < 41:
-                            if arrival[la,lo] !=-1:
-                                arrival[la,lo]=28
+                            if arrival[la, lo] != -1:
+                                arrival[la, lo] = 28
 
     # Saving results
     rnffile.variables[u'drainage_basin_id'][:] = drainage
@@ -656,51 +656,51 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
 def plotting_runoff(drainage, arrival, lons, lats):
 
     # Split data and concatenate in reverse order to turn by 180° to Prime meridian
-    ds1,ds2 = np.hsplit(np.squeeze(drainage),2)
-    drainage_cat = np.concatenate((ds2,ds1),axis=1)
-    ds1,ds2 = np.hsplit(np.squeeze(arrival),2)
-    arrival_cat = np.concatenate((ds2,ds1),axis=1)
+    ds1, ds2 = np.hsplit(np.squeeze(drainage), 2)
+    drainage_cat = np.concatenate((ds2, ds1), axis=1)
+    ds1, ds2 = np.hsplit(np.squeeze(arrival), 2)
+    arrival_cat = np.concatenate((ds2, ds1), axis=1)
 
     lons = lons-180
     lon_0 = lons.mean()
     lat_0 = lats.mean()
 
-    m = Basemap(llcrnrlon=-60.,llcrnrlat=-10,urcrnrlon=-30.,urcrnrlat=20.,\
-            resolution='l',area_thresh=1000.,projection='cyl')
+    m = Basemap(llcrnrlon=-60., llcrnrlat=-10, urcrnrlon=-30., urcrnrlat=20., \
+            resolution='l', area_thresh=1000., projection='cyl')
 
     #Use meshgrid to create 2D arrays from coordinates
     lon, lat = np.meshgrid(lons, lats)
     xi, yi = m(lon, lat)
 
-    fig1 = plt.figure(figsize=(12,8))
-    cmap=plt.cm.flag
-    cs = m.pcolor(xi,yi,arrival_cat,cmap=cmap)
+    fig1 = plt.figure(figsize=(12, 8))
+    cmap = plt.cm.flag
+    cs = m.pcolor(xi, yi, arrival_cat, cmap=cmap)
     m.drawcoastlines()
-    m.drawparallels(np.arange(-90.,120.,45.))
-    m.drawmeridians(np.arange(0.,360.,90.))
+    m.drawparallels(np.arange(-90., 120., 45.))
+    m.drawmeridians(np.arange(0., 360., 90.))
 
     lon_0 = lons.mean()
     lat_0 = lats.mean()
 
-    m = Basemap(llcrnrlon=20.,llcrnrlat=30,urcrnrlon=80.,urcrnrlat=50.,\
-            resolution='l',area_thresh=1000.,projection='poly',\
-            lat_0=0.,lon_0=20.)
+    m = Basemap(llcrnrlon=20., llcrnrlat=30, urcrnrlon=80., urcrnrlat=50., \
+            resolution='l', area_thresh=1000., projection='poly', \
+            lat_0=0., lon_0=20.)
 
     #Use meshgrid to create 2D arrays from coordinates
     lon, lat = np.meshgrid(lons, lats)
     xi, yi = m(lon, lat)
 
-    fig1 = plt.figure(figsize=(12,8))
-    cs = m.pcolor(xi,yi,drainage_cat,cmap=cmap)
+    fig1 = plt.figure(figsize=(12, 8))
+    cs = m.pcolor(xi, yi, drainage_cat, cmap=cmap)
     m.drawcoastlines()
-    m.drawparallels(np.arange(-90.,120.,45.))
-    m.drawmeridians(np.arange(0.,360.,90.))
+    m.drawparallels(np.arange(-90., 120., 45.))
+    m.drawmeridians(np.arange(0., 360., 90.))
 
-    fig1 = plt.figure(figsize=(12,8))
-    cs = m.pcolor(xi,yi,arrival_cat,cmap=cmap)
+    fig1 = plt.figure(figsize=(12, 8))
+    cs = m.pcolor(xi, yi, arrival_cat, cmap=cmap)
     m.drawcoastlines()
-    m.drawparallels(np.arange(-90.,120.,45.))
-    m.drawmeridians(np.arange(0.,360.,90.))
+    m.drawparallels(np.arange(-90., 120., 45.))
+    m.drawmeridians(np.arange(0., 360., 90.))
 
 
 def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
@@ -712,7 +712,7 @@ def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
 
     # Editing runoff mapper lsm in oasis3-mct masks file
     filename = '%smasks.nc' % (output_path_oasis,)
-    oasis = Dataset(filename,'r+')
+    oasis = Dataset(filename, 'r+')
 
     RnfA = oasis.variables[u'RnfA.msk'][:]
     RnfO = oasis.variables[u'RnfO.msk'][:]
@@ -724,8 +724,8 @@ def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                 if lons[lo] > 46 and lons[lo] < 56:
                     for la in range(len(lats)):
                         if lats[la] > 36 and lats[la] < 47:
-                            RnfA[la,lo]=0
-                            RnfO[la,lo]=1
+                            RnfA[la, lo] = 0
+                            RnfO[la, lo] = 1
 
     # Saving altered runoff mapper lsm
     oasis.variables[u'RnfA.msk'][:] = RnfA
