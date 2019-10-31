@@ -144,7 +144,7 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
     crn_lats = np.zeros((4,ny,nx))
 
     kk = 0 # cell index
-    for ii in range(0,len(numlons_list)):
+    for ii, ni in enumerate(numlons_list):
         '''
         Layout of the four corners
 
@@ -162,7 +162,6 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
         '''
 
         dlon = dlon_list[ii]
-        ni   = numlons_list[ii]
         lat  = lat_list[ii]
         lons = np.arange(0,360,dlon)
 
@@ -225,10 +224,9 @@ def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
     gridcell_area = np.zeros((ny,nx))
 
     kk = 0 # cell index
-    for ii in range(0,len(numlons_list)):
+    for ii, ni in enumerate(numlons_list):
 
         dlon = dlon_list[ii]
-        ni   = numlons_list[ii]
         lat  = lat_list[ii]
         lons = np.arange(0,360,dlon)
 
