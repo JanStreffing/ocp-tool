@@ -549,7 +549,7 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
 
             elif filebase == 'masks':
                 if grids_name.startswith('A') or grids_name.startswith('L'):
-                    id_msk[:, :] = lsm_binary[:, :]
+                    id_msk[:, :] = np.round(lsm_binary[:, :])
                 elif grids_name.startswith('R'):
                     id_msk[:, :] = np.abs(lsm_binary[:, :] - 1)
                 else:
