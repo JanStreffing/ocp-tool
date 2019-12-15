@@ -626,7 +626,7 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
             for lo, lon in enumerate(lons):
                 #removing old basin
                 if lon > 27 and lon < 43:
-                    for la, lats in enumerate(lats):
+                    for la, lat in enumerate(lats):
                         if lat > 40.5 and lat < 48:
                             if drainage[la, lo] == -2:
                                 drainage[la, lo] = 23
