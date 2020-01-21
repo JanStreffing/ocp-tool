@@ -45,6 +45,7 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import csv
 from matplotlib import cm
 from gribapi import *
 from mpl_toolkits.basemap import Basemap
@@ -270,6 +271,25 @@ def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
     return(gridcell_area)
     
     
+def write_red_point_file(lats_list, lons_list, output_path_oifs, truncation_type, NN):
+    '''
+    This function write the red_point.txt file for OpenIFS
+    '''
+    
+    if truncation_type == "linear":
+        redpoint_txt = '%s/TL%d_red_points.txt' % (output_path_oifs,NN*2-1)
+    elif truncation_type == "cubic-octahedral":
+        redpoint_txt = '%s/TCO%d_red_points.txt' % (output_path_oifs,NN-1)
+
+    with open(redpoint_txt, 'w') as f:
+        f.write("gridtype  = cell\n")
+        f.write("gridsize  = " + str(len(lons_list)) + "\n")
+        f.write("xvals     = ")
+        for item in lons_list:
+            f.write("%s\n" % item)
+        f.write("yvals     = ")
+        for item in lats_list:
+            f.write("%s\n" % item)
     
 def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields):
     '''
@@ -352,6 +372,8 @@ def autoselect_basins(grid_name_oce):
         manual_basin_removal = ['caspian-sea', 'black-sea', 'white-sea', 'gulf-of-ob', 
                                 'persian-gulf', 'coronation-queen-maude']
     if grid_name_oce == 'MR':
+        manual_basin_removal = ['caspian-sea']
+    if grid_name_oce == 'HR':
         manual_basin_removal = ['caspian-sea']
     
     return manual_basin_removal
@@ -463,7 +485,7 @@ def plotting_lsm(res_num, lsm_binary, center_lats, center_lons):
     
 
     
-def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type):
+def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type, output_path_oifs):
 
     '''
     This function generates coordinate and areas fields based on
@@ -474,6 +496,8 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
     lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data(lines)
     center_lats, center_lons, crn_lats, crn_lons = calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list, lat_list)
     gridcell_area = calculate_area(center_lons, numlons_list, dlon_list, lat_list)
+    
+    write_red_point_file(lats_list, lons_list, output_path_oifs, truncation_type, NN)
 
     return (center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN)
     
@@ -617,8 +641,10 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                       grid_name_oce, manual_basin_removal):
     '''
-    This function generates coordinate and areas fields based on
-    the full and reduced gaussian gridfiles for a given truncation number. 
+    This function modifies a given runoff mapper map to remove basins that are
+    not included in the ocean model (FESOM2 or NEMO without closed seas)
+    It then redirects the P-E over this area to another riverdelta to close the 
+    global freshwater budget.
     '''
     input_file_rnf = '%srunoff_maps.nc' % (input_path_runoff,)
     output_file_rnf = '%srunoff_maps.nc' % (output_path_runoff,)
@@ -797,18 +823,18 @@ if __name__ == '__main__':
     resolution_list = [159]
     
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'cubic-octahedral'
+    truncation_type = 'linear'
     
     # OpenIFS experiment name. This 4 digit code is part of the name of the 
     # ICMGG????INIT file you got from EMCWF
     #exp_name_oifs = 'h6mv' #default for linear
-    exp_name_oifs = 'h9wu'#default for cubic-octahedral
+    exp_name_oifs = 'h6mv'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of 
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
-    num_fields = 50 
+    num_fields = 50 #cy43 default=50 cy4 default=41
     
     # Name of ocean model grid. So far supported are: 
-    # FESOM2: CORE2, MR;  NEMO:
+    # FESOM2: CORE2, MR, HR;  NEMO:
     # Important: If you chose a supported ocean grid, manual removal of basins
     # for that grid will be applied. If you chose an unknown grid and wish to
     # do manual basin removal, list them in manual_basin_removal below. If you
@@ -848,7 +874,7 @@ if __name__ == '__main__':
 
     # Loop over atmosphere resolutions. Todo: select correct exp_name_oifs 
     for res_num in resolution_list:
-        center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN = generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
+        center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN = generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type, output_path_oifs)
         lsm_binary = process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, num_fields, input_path_lake, manual_basin_removal ,lons_list, center_lats, center_lons)
         write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary, NN, input_path_runoff)
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff, grid_name_oce, manual_basin_removal)
