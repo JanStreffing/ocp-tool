@@ -287,45 +287,13 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
                 lsm_id = i
             if shortName == 'slt':
                 slt_id = i
-
-            nres = gribapi.grib_get(gid[i], 'N')
-            gribfield[i] = gribapi.grib_get_values(gid[i])
-
-    return (gribfield, lsm_id, slt_id, gid)
-
-
-def read_lake(res_num, input_path_lake):
-    '''
-    This function reads the lakemask input file in grib format and save it into a
-    a numpy array.
-    '''
-
-    print(' Opening lake inpute file: %s ' % (input_path_lake,))
-    input_file_lake = input_path_lake + 'clake_' + str(res_num)
-    gid = [None] * 2
-    lakes = [None] * 2
-    with open(input_file_lake, 'r+') as f:
-        keys = ['N', 'shortName']
-
-        for i in range(2):
-            gid[i] = gribapi.grib_new_from_file(f)
-            if gid[i] is None:
-                break
-
-            for key in keys:
-                if not gribapi.grib_is_defined(gid[i], key):
-                    raise ValueError("Key '%s' was not defined" % key)
-                print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
-
-            shortName = gribapi.grib_get(gid[i], 'shortName')
-
             if shortName == 'cl':
                 cl_id = i
 
             nres = gribapi.grib_get(gid[i], 'N')
-            lakes[i] = gribapi.grib_get_values(gid[i])
+            gribfield[i] = gribapi.grib_get_values(gid[i])
 
-    return (lakes, cl_id)
+    return (gribfield, lsm_id, slt_id, cl_id, gid)
 
 
 def autoselect_basins(grid_name_oce):
@@ -343,7 +311,7 @@ def autoselect_basins(grid_name_oce):
         return []
 
 
-def modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id,
+def modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id,
                lons_list, center_lats, center_lons):
     '''
     This function firstly uses the lake mask to remove lakes from the land sea
@@ -355,7 +323,7 @@ def modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id,
     gribfield_mod = gribfield
     # Soil class of removed lakes is SANDY CLAY LOAM
     for i in np.arange (0, len(gribfield_mod[slt_id])-1):
-        if lakes[cl_id][i] > 0.5:
+        if gribfield_mod[cl_id][i] > 0.5:
             gribfield_mod[slt_id][i] = 6
             gribfield_mod[lsm_id][i] = 1
 
@@ -461,9 +429,8 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
     modified in the exact same locations
     '''
 
-    gribfield, lsm_id, slt_id, gid = read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields)
-    lakes,  cl_id = read_lake(res_num, input_path_lake)
-    lsm_binary, gribfield_mod = modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id, lons_list, center_lats, center_lons)
+    gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields)
+    lsm_binary, gribfield_mod = modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id, lons_list, center_lats, center_lons)
     write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, num_fields, gid)
     return (lsm_binary)
 
@@ -748,12 +715,12 @@ if __name__ == '__main__':
     resolution_list = [159]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'cubic-octahedral'
+    truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    #exp_name_oifs = 'h6mv' #default for linear
-    exp_name_oifs = 'h9wu'#default for cubic-octahedral
+    exp_name_oifs = 'h6mv' #default for linear
+    #exp_name_oifs = 'h9wu'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50
@@ -765,7 +732,7 @@ if __name__ == '__main__':
     # do manual basin removal, list them in manual_basin_removal below. If you
     # want to remove a basin not yet added (e.g.) for paleo simulations, add
     # the basin in section def modify_lsm and def modify_runoff_map
-    grid_name_oce = 'CORE2'
+    grid_name_oce = 'AMIP'
 
     # There is automatic removal of lakes via the lake file. To remove larger
     # features, e.g. coastal seas for low res or paleo simulations list them
