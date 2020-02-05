@@ -14,7 +14,7 @@ To this end it performs three tasks:
     the modified land sea mask
 
 
-To function the scrip therefore needs the following input files:
+To function, the script therefore needs the following input files:
 1) Grid information txt file for the full Gaussian grid of the chosen
     trucation number. This fileset comes with the tool.
 2) Grid information txt file for the reduced Gaussian grid This fileset comes
@@ -421,8 +421,8 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
 
 
 def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
-                grid_name_oce, num_fields, input_path_lake,
-                manual_basin_removal, lons_list, center_lats, center_lons):
+                grid_name_oce, num_fields, manual_basin_removal, lons_list, 
+                center_lats, center_lons):
     '''
     This function first reads, modifies and finally saves the new land
     sea mask. Every step is mirrored for the soil type file as it has to be
@@ -748,10 +748,8 @@ if __name__ == '__main__':
         # Input file directories. Place files in appropriate subfolders or modify
     if truncation_type == 'cubic-octahedral':
         input_path_reduced_grid = 'input/gaussian_grids_octahedral_reduced/'
-        input_path_lake = 'input/lakefiles/cubic_octahedral/'
     elif truncation_type == 'linear':
         input_path_reduced_grid = 'input/gaussian_grids_linear_reduced/'
-        input_path_lake = 'input/lakefiles/linear/'
     else:
         sys.exit('truncation type not recognized')
     input_path_full_grid = 'input/gaussian_grids_full/'
@@ -775,8 +773,7 @@ if __name__ == '__main__':
 
         lsm_binary = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, num_fields,
-                                 input_path_lake, manual_basin_removal,
-                                 lons_list,
+                                 manual_basin_removal, lons_list,
                                  center_lats, center_lons)
 
         write_oasis_files(res_num,
