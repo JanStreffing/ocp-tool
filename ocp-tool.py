@@ -355,7 +355,7 @@ def modify_lsm(gribfield, lakes, manual_basin_removal, lsm_id, slt_id, cl_id,
     gribfield_mod = gribfield
     # Soil class of removed lakes is SANDY CLAY LOAM
     for i in np.arange (0, len(gribfield_mod[slt_id])-1):
-        if lakes[cl_id][i] > 0.1:
+        if lakes[cl_id][i] > 0.5:
             gribfield_mod[slt_id][i] = 6
             gribfield_mod[lsm_id][i] = 1
 
