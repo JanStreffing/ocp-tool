@@ -305,7 +305,7 @@ def autoselect_basins(grid_name_oce):
     if grid_name_oce == 'CORE2':
         return ['caspian-sea', 'black-sea', 'white-sea', 'gulf-of-ob',
                 'persian-gulf', 'coronation-queen-maude']
-    elif grid_name_oce == 'MR':
+    elif (grid_name_oce == 'MR') or (grid_name_oce == 'HR'):
         return ['caspian-sea']
     else:
         return []
@@ -316,14 +316,19 @@ def modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id,
     '''
     This function firstly uses the lake mask to remove lakes from the land sea
     mask and secondly, if set, uses a preselected list of basins to manually
-    alter the lsm and slt fields further.
+    alter the lsm and slt fields further. It returns both the original mask
+    as well as the modified one
     '''
+    # Mask with only solid land in correct format for oasis3-mct file
+    import copy
+    lsm_binary_l = copy.deepcopy(gribfield[lsm_id])
+    lsm_binary_l = lsm_binary_l[np.newaxis, :]
 
     # Automatic lake removal with lakes mask
-    gribfield_mod = gribfield
-    # Soil class of removed lakes is SANDY CLAY LOAM
+    gribfield_mod = gribfield[:]
+    # Soil class of removed lakes is set to SANDY CLAY LOAM
     for i in np.arange (0, len(gribfield_mod[slt_id])-1):
-        if gribfield_mod[cl_id][i] > 0.5:
+        if gribfield_mod[cl_id][i] >= 0.5:
             gribfield_mod[slt_id][i] = 6
             gribfield_mod[lsm_id][i] = 1
 
@@ -344,7 +349,7 @@ def modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id,
 
         if basin == 'white-sea':
             for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 63 and center_lats[0, ia] < 68.5 and center_lons[0, ia] > 31 and center_lons[0, ia] < 42:
+               if center_lats[0, ia] > 63 and center_lats[0, ia] < 67 and center_lons[0, ia] > 31 and center_lons[0, ia] < 41:
                   gribfield_mod[lsm_id][ia] = 1
                   gribfield_mod[slt_id][ia] = 6
 
@@ -356,7 +361,7 @@ def modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id,
 
         if basin == 'persian-gulf':
             for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 21 and center_lats[0, ia] < 30 and center_lons[0, ia] > 47 and center_lons[0, ia] < 59:
+               if center_lats[0, ia] > 21 and center_lats[0, ia] < 31 and center_lons[0, ia] > 46 and center_lons[0, ia] < 59:
                   gribfield_mod[lsm_id][ia] = 1
                   gribfield_mod[slt_id][ia] = 6
 
@@ -366,11 +371,12 @@ def modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id,
                   gribfield_mod[lsm_id][ia] = 1
                   gribfield_mod[slt_id][ia] = 6
 
-    # lsm_binary in correct format for oasis3-mct file
-    lsm_binary = gribfield_mod[lsm_id]
-    lsm_binary = lsm_binary[np.newaxis, :]
 
-    return (lsm_binary, gribfield_mod)
+    # Mask with lakes counting as land in correct format for oasis3-mct file
+    lsm_binary_a = gribfield_mod[lsm_id]
+    lsm_binary_a = lsm_binary_a[np.newaxis, :]
+
+    return (lsm_binary_a,lsm_binary_l, gribfield_mod)
 
 
 def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
@@ -430,12 +436,12 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
     '''
 
     gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields)
-    lsm_binary, gribfield_mod = modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id, lons_list, center_lats, center_lons)
+    lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id, lons_list, center_lats, center_lons)
     write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, num_fields, gid)
-    return (lsm_binary)
+    return (lsm_binary_a,lsm_binary_l)
 
 
-def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary, NN, input_path_runoff):
+def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a ,lsm_binary_l , NN, input_path_runoff):
     '''
     This function writes the binary masks, areas and grids files for
     oasis3-mct
@@ -515,10 +521,12 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
                 id_cla.valid_max = crn_lats.max()
 
             elif filebase == 'masks':
-                if grids_name.startswith('A') or grids_name.startswith('L'):
-                    id_msk[:, :] = np.round(lsm_binary[:, :])
+                if grids_name.startswith('A') :
+                    id_msk[:, :] = np.round(lsm_binary_a[:, :])  
+                elif grids_name.startswith('L'):
+                    id_msk[:, :] = np.round(lsm_binary_l[:, :])
                 elif grids_name.startswith('R'):
-                    id_msk[:, :] = np.abs(lsm_binary[:, :] - 1)
+                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
@@ -719,14 +727,14 @@ if __name__ == '__main__':
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'h6mv' #default for linear
-    #exp_name_oifs = 'h9wu'#default for cubic-octahedral
+    #exp_name_oifs = 'h6mv' #default for linear
+    exp_name_oifs = 'h9wu'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50
 
     # Name of ocean model grid. So far supported are:
-    # FESOM2: CORE2, MR;  NEMO:
+    # FESOM2: CORE2, MR, HR;  NEMO:
     # Important: If you chose a supported ocean grid, manual removal of basins
     # for that grid will be applied. If you chose an unknown grid and wish to
     # do manual basin removal, list them in manual_basin_removal below. If you
@@ -771,7 +779,7 @@ if __name__ == '__main__':
                                  input_path_reduced_grid, input_path_full_grid,
                                  truncation_type)
 
-        lsm_binary = process_lsm(res_num, input_path_oifs, output_path_oifs,
+        lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, num_fields,
                                  manual_basin_removal, lons_list,
                                  center_lats, center_lons)
@@ -779,7 +787,7 @@ if __name__ == '__main__':
         write_oasis_files(res_num,
                           output_path_oasis, dir_path, grid_name_oce,
                           center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
-                          lsm_binary, NN, input_path_runoff)
+                          lsm_binary_a, lsm_binary_l, NN, input_path_runoff)
 
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal)
@@ -787,4 +795,8 @@ if __name__ == '__main__':
         modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                           output_path_oasis)
 
-        plotting_lsm(res_num, lsm_binary, center_lats, center_lons)
+        plotting_lsm(res_num, lsm_binary_l, center_lats, center_lons)
+        plotting_lsm(res_num, lsm_binary_a, center_lats, center_lons)
+        plotting_lsm(res_num, lsm_binary_l-lsm_binary_a+1, center_lats, center_lons)
+
+
