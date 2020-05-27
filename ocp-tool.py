@@ -382,7 +382,7 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
         if basin == 'coronation-queen-maude':
             for ia in range(len(lons_list)):
                if center_lats[0, ia] > 48 and center_lats[0, ia] < 55 and center_lons[0, ia] > -102 and center_lons[0, ia] < -94:
-                  print('IM coronation-queen-maude lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                  print('coronation-queen-maude lat, lon:',center_lats[0, ia], center_lons[0, ia])
                   gribfield_mod[lsm_id][ia] = 1
                   gribfield_mod[slt_id][ia] = 6
                   
@@ -474,12 +474,12 @@ def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons):
 
     fig3 = plt.figure(figsize=(12, 7))
     ax3  = fig3.add_subplot(111)
-    xptsa = center_lons[lsm_binary_a<1e-8]
-    yptsa = center_lats[lsm_binary_a<1e-8]
-    xptsl = center_lons[lsm_binary_l<1e-8]
-    yptsl = center_lats[lsm_binary_l<1e-8]
-    ax3.scatter(xptsl, yptsl, s=2.5, color='red')
-    ax3.scatter(xptsa, yptsa, s=3)
+    xptsa = center_lons[np.round(lsm_binary_a[:, :])<1]
+    yptsa = center_lats[np.round(lsm_binary_a[:, :])<1]
+    xptsl = center_lons[np.round(lsm_binary_l[:, :])<1]
+    yptsl = center_lats[np.round(lsm_binary_l[:, :])<1]
+    ax3.scatter(xptsl, yptsl, s=1.5, color='red')
+    ax3.scatter(xptsa, yptsa, s=2)
     figname = 'output/plots/land_points_T%d.png' % (res_num,)
     fig3.savefig(figname, format='png')
 
@@ -602,11 +602,11 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
 
             elif filebase == 'masks':
                 if grids_name.startswith('A') :
-                    id_msk[:, :] = np.round(lsm_binary_a[:, :]+0.499999999)  
+                    id_msk[:, :] = np.round(lsm_binary_a[:, :])  
                 elif grids_name.startswith('L'):
-                    id_msk[:, :] = np.round(lsm_binary_l[:, :]+0.499999999)
+                    id_msk[:, :] = np.round(lsm_binary_l[:, :])
                 elif grids_name.startswith('R'):
-                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :]+0.499999999 - 1))
+                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
