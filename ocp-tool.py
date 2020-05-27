@@ -304,15 +304,28 @@ def autoselect_basins(grid_name_oce):
 
     if grid_name_oce == 'CORE2':
         return ['caspian-sea', 'black-sea', 'white-sea', 'gulf-of-ob',
-                'persian-gulf', 'coronation-queen-maude']
+                'persian-gulf' ] #, 'coronation-queen-maude']
     elif (grid_name_oce == 'MR') or (grid_name_oce == 'HR'):
         return ['caspian-sea']
     else:
         return []
 
 
-def modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id,
-               lons_list, center_lats, center_lons):
+def autoselect_coastline(grid_name_oce, truncation_type, res_num):
+    '''
+    This function selects the list of coastlines where ocean points have to 
+    be added to the OpenIFS land sea mask based on a given combination of
+    ocean grid name and atmospheric resolution.
+    '''
+    
+    if grid_name_oce == 'CORE2' and truncation_type == 'cubic-octahedral' and res_num == 159:
+        return ['tanquary-fiord', 'spencer-golf', 'ingrid-christensen-coast', 
+                'jennings-promontory', 'princess-martha-coast-east', 
+                'princess-martha-coast-center', 'princess-martha-coast-west']
+
+
+def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition, 
+               lsm_id, slt_id, cl_id, lons_list, center_lats, center_lons):
     '''
     This function firstly uses the lake mask to remove lakes from the land sea
     mask and secondly, if set, uses a preselected list of basins to manually
@@ -356,6 +369,7 @@ def modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id,
         if basin == 'gulf-of-ob':
             for ia in range(len(lons_list)):
                if center_lats[0, ia] > 65 and center_lats[0, ia] < 71 and center_lons[0, ia] > 70 and center_lons[0, ia] < 79:
+                  print('gulf-of-ob lat, lon:',center_lats[0, ia], center_lons[0, ia])
                   gribfield_mod[lsm_id][ia] = 1
                   gribfield_mod[slt_id][ia] = 6
 
@@ -368,8 +382,63 @@ def modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id,
         if basin == 'coronation-queen-maude':
             for ia in range(len(lons_list)):
                if center_lats[0, ia] > 48 and center_lats[0, ia] < 55 and center_lons[0, ia] > -102 and center_lons[0, ia] < -94:
+                  print('IM coronation-queen-maude lat, lon:',center_lats[0, ia], center_lons[0, ia])
                   gribfield_mod[lsm_id][ia] = 1
                   gribfield_mod[slt_id][ia] = 6
+                  
+                  
+    print('Adding: ', manual_coastline_addition)
+    for coastline in manual_coastline_addition:
+        
+        if coastline == 'tanquary-fiord':
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > 79.5 and center_lats[0, ia] < 81.5 and center_lons[0, ia] > -102 and center_lons[0, ia] < -98:
+                  print('tanquary-fiord lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                  gribfield_mod[lsm_id][ia] = 0
+                  gribfield_mod[slt_id][ia] = 0
+
+        if coastline == 'spencer-golf':
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > -35 and center_lats[0, ia] < -34 and center_lons[0, ia] > 137 and center_lons[0, ia] < 137.5:
+                  print('spencer-golf lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                  gribfield_mod[lsm_id][ia] = 0
+                  gribfield_mod[slt_id][ia] = 0
+                  
+        if coastline == 'ingrid-christensen-coast':
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > -67 and center_lats[0, ia] < -65 and center_lons[0, ia] > 97 and center_lons[0, ia] < 100:
+                  print('ingrid-christensen-coast lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                  gribfield_mod[lsm_id][ia] = 0
+                  gribfield_mod[slt_id][ia] = 0    
+                  
+        if coastline == 'jennings-promontory':
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > -71 and center_lats[0, ia] < -68 and center_lons[0, ia] > 68.5 and center_lons[0, ia] < 71.6:
+                  print('jennings-promontory lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                  gribfield_mod[lsm_id][ia] = 0
+                  gribfield_mod[slt_id][ia] = 0   
+                  
+        if coastline == 'princess-martha-coast-east':
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > -71.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 25 and center_lons[0, ia] < 27:
+                  print('princess-martha-coast-east lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                  gribfield_mod[lsm_id][ia] = 0
+                  gribfield_mod[slt_id][ia] = 0   
+                  
+        if coastline == 'princess-martha-coast-center':
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > -70.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 16 and center_lons[0, ia] < 19:
+                  print('princess-martha-coast-center lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                  gribfield_mod[lsm_id][ia] = 0
+                  gribfield_mod[slt_id][ia] = 0  
+                  
+        if coastline == 'princess-martha-coast-west':
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > -72 and center_lats[0, ia] < -70 and center_lons[0, ia] > -2.5 and center_lons[0, ia] < 2.5:
+                  print('princess-martha-coast-west lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                  gribfield_mod[lsm_id][ia] = 0
+                  gribfield_mod[slt_id][ia] = 0  
+    
 
 
     # Mask with lakes counting as land in correct format for oasis3-mct file
@@ -398,16 +467,19 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
             gribapi.grib_release(gid[i])
 
 
-def plotting_lsm(res_num, lsm_binary, center_lats, center_lons):
+def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons):
     '''
     This function plots the final land sea mask
     '''
 
     fig3 = plt.figure(figsize=(12, 7))
     ax3  = fig3.add_subplot(111)
-    xpts = center_lons[lsm_binary<0.5]
-    ypts = center_lats[lsm_binary<0.5]
-    ax3.scatter(xpts, ypts, s=5)
+    xptsa = center_lons[lsm_binary_a<1e-8]
+    yptsa = center_lats[lsm_binary_a<1e-8]
+    xptsl = center_lons[lsm_binary_l<1e-8]
+    yptsl = center_lats[lsm_binary_l<1e-8]
+    ax3.scatter(xptsl, yptsl, s=2.5, color='red')
+    ax3.scatter(xptsa, yptsa, s=3)
     figname = 'output/plots/land_points_T%d.png' % (res_num,)
     fig3.savefig(figname, format='png')
 
@@ -427,17 +499,25 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
 
 
 def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
-                grid_name_oce, num_fields, manual_basin_removal, lons_list, 
-                center_lats, center_lons):
+                grid_name_oce, num_fields, manual_basin_removal, 
+                manual_coastline_addition, lons_list, center_lats, center_lons):
     '''
     This function first reads, modifies and finally saves the new land
     sea mask. Every step is mirrored for the soil type file as it has to be
     modified in the exact same locations
     '''
 
-    gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields)
-    lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm(gribfield, manual_basin_removal, lsm_id, slt_id, cl_id, lons_list, center_lats, center_lons)
-    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, num_fields, gid)
+    gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, 
+                                                     output_path_oifs, 
+                                                     exp_name_oifs, num_fields)
+    lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm(gribfield, 
+                                                           manual_basin_removal, 
+                                                           manual_coastline_addition, 
+                                                           lsm_id, slt_id, cl_id, 
+                                                           lons_list, center_lats, 
+                                                           center_lons)
+    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
+              grid_name_oce, num_fields, gid)
     return (lsm_binary_a,lsm_binary_l)
 
 
@@ -522,11 +602,11 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
 
             elif filebase == 'masks':
                 if grids_name.startswith('A') :
-                    id_msk[:, :] = np.round(lsm_binary_a[:, :])  
+                    id_msk[:, :] = np.round(lsm_binary_a[:, :]+0.499999999)  
                 elif grids_name.startswith('L'):
-                    id_msk[:, :] = np.round(lsm_binary_l[:, :])
+                    id_msk[:, :] = np.round(lsm_binary_l[:, :]+0.499999999)
                 elif grids_name.startswith('R'):
-                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
+                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :]+0.499999999 - 1))
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
@@ -723,7 +803,7 @@ if __name__ == '__main__':
     resolution_list = [159]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'linear'
+    truncation_type = 'cubic-octahedral'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
@@ -740,7 +820,7 @@ if __name__ == '__main__':
     # do manual basin removal, list them in manual_basin_removal below. If you
     # want to remove a basin not yet added (e.g.) for paleo simulations, add
     # the basin in section def modify_lsm and def modify_runoff_map
-    grid_name_oce = 'AMIP'
+    grid_name_oce = 'CORE2'
 
     # There is automatic removal of lakes via the lake file. To remove larger
     # features, e.g. coastal seas for low res or paleo simulations list them
@@ -749,6 +829,15 @@ if __name__ == '__main__':
     # If you have chosen a known grid_name_oce the basins will be selected
     # automatically
     manual_basin_removal = autoselect_basins(grid_name_oce)
+    
+    # Certain resolution configurations have slightly missmatch coastline, 
+    # whereby the atmosphere acutally needs more ocean points. 
+    # If you have chosen a known combination of grid_name_oce and atmospheric 
+    # resolution, the coastlines in question will be selected for you.
+    manual_coastline_addition = autoselect_coastline(grid_name_oce, 
+                                                     truncation_type, 
+                                                     resolution_list[0])
+
 
     # Find working directory
     dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -781,7 +870,7 @@ if __name__ == '__main__':
 
         lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, num_fields,
-                                 manual_basin_removal, lons_list,
+                                 manual_basin_removal, manual_coastline_addition, lons_list,
                                  center_lats, center_lons)
 
         write_oasis_files(res_num,
@@ -795,8 +884,7 @@ if __name__ == '__main__':
         modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                           output_path_oasis)
 
-        plotting_lsm(res_num, lsm_binary_l, center_lats, center_lons)
-        plotting_lsm(res_num, lsm_binary_a, center_lats, center_lons)
-        plotting_lsm(res_num, lsm_binary_l-lsm_binary_a+1, center_lats, center_lons)
+        plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons)
+
 
 
