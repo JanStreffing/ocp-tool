@@ -404,6 +404,8 @@ def autoselect_basins(grid_name_oce):
                 'persian-gulf' ] #, 'coronation-queen-maude']
     elif (grid_name_oce == 'MR') or (grid_name_oce == 'HR'):
         return ['caspian-sea']
+    elif (grid_name_oce == 'ORCA05'):
+        return ['all-but-caspian-sea']
     else:
         return []
 
@@ -484,7 +486,18 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
                   print('coronation-queen-maude lat, lon:',center_lats[0, ia], center_lons[0, ia])
                   gribfield_mod[lsm_id][ia] = 1
                   gribfield_mod[slt_id][ia] = 6
+        
+        if basin == 'all-but-caspian-sea':
+            # Remove Caspian Sea from lake mask
+            # That way, when we remove all lakes, the Caspian will not be removed
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > 36 and center_lats[0, ia] < 47 and center_lons[0, ia] > 46 and center_lons[0, ia] < 56:
+                  print(' caspian lake mask ',gribfield_mod[cl_id][ia])
+                  #gribfield_mod[cl_id][ia] = 0
                   
+            # Remove all lakes (not Caspian)
+            #gribfield_mod[lsm_id][:] = gribfield_mod[lsm_id][:] + gribfield_mod[cl_id][:]
+                 
                   
     print('Adding: ', manual_coastline_addition)
     for coastline in manual_coastline_addition:
@@ -577,8 +590,9 @@ def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons):
     yptsa = center_lats[np.round(lsm_binary_a[:, :])<1]
     xptsl = center_lons[np.round(lsm_binary_l[:, :])<1]
     yptsl = center_lats[np.round(lsm_binary_l[:, :])<1]
-    ax3.scatter(xptsl, yptsl, s=1.5, color='red')
-    ax3.scatter(xptsa, yptsa, s=2)
+    ax3.scatter(xptsl, yptsl, s=1.5, color='red', label='L wet points')
+    ax3.scatter(xptsa, yptsa, s=2, label='A wet points')
+    ax3.legend()
     figname = 'output/plots/land_points_T%d.png' % (res_num,)
     fig3.savefig(figname, format='png')
 
@@ -676,6 +690,7 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
             elif filebase == 'masks':
                 mskname = '%s.msk' % (grids_name,)
                 id_msk = nc.createVariable(mskname, 'int32', (yname, xname))
+                id_msk.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
                 id_msk.valid_min = 0.
                 id_msk.valid_max = 1
 
@@ -683,6 +698,7 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
             elif filebase == 'areas':
                 areaname = '%s.srf' % (grids_name,)
                 id_area = nc.createVariable(areaname, 'float64', (yname, xname))
+                id_area.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
 
             id_lon[:, :] = center_lons[:, :]
             id_lat[:, :] = center_lats[:, :]
