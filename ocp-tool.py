@@ -437,6 +437,7 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
     import copy
     lsm_binary_l = copy.deepcopy(gribfield[lsm_id])
     lsm_binary_l = lsm_binary_l[np.newaxis, :]
+    lsm_binary_r = lsm_binary_l.copy()
 
     # Automatic lake removal with lakes mask
     gribfield_mod = gribfield[:]
@@ -488,15 +489,37 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
                   gribfield_mod[slt_id][ia] = 6
         
         if basin == 'all-but-caspian-sea':
-            # Remove Caspian Sea from lake mask
-            # That way, when we remove all lakes, the Caspian will not be removed
+            # The lake mask is fractional [0,1], where 1 is lake, 0 is no lakes
+            # The lsm is fractional [0,1], where 1 is land, 0 is sea
+            # We need to select the Caspian Sea
+            caspian_lsm = np.zeros(gribfield_mod[cl_id].shape)
             for ia in range(len(lons_list)):
                if center_lats[0, ia] > 36 and center_lats[0, ia] < 47 and center_lons[0, ia] > 46 and center_lons[0, ia] < 56:
                   print(' caspian lake mask ',gribfield_mod[cl_id][ia])
-                  #gribfield_mod[cl_id][ia] = 0
+                  # Select any fraction of lake around the Caspian
+                  # We could also do > 0.5, i.e. only pick points with >50% lake
+                  if gribfield_mod[cl_id][ia] > 0:
+                     caspian_lsm[ia] = gribfield_mod[cl_id][ia]
                   
-            # Remove all lakes (not Caspian)
-            #gribfield_mod[lsm_id][:] = gribfield_mod[lsm_id][:] + gribfield_mod[cl_id][:]
+            # Remove all lakes by adding lake mask to lsm
+            # Areas with big lakes will be > 1
+            gribfield_mod[lsm_id][:] = gribfield_mod[lsm_id][:] + gribfield_mod[cl_id][:]
+            # Ensure lsm [0,1]
+            gribfield_mod[lsm_id][gribfield_mod[lsm_id] > 1] = 1
+            # The lsm with no lakes whatsoever is used for runoff
+            lsm_binary_r[0,:] = gribfield_mod[lsm_id][:]
+            # Now remove the Caspian Sea from lsm, i.e. make it part of the ocean
+            gribfield_mod[lsm_id][:] = gribfield_mod[lsm_id][:] - caspian_lsm[:]
+            
+            fig, ax = plt.subplots(1,3)
+            ax[0].scatter(center_lons.flatten(), center_lats.flatten(), c=gribfield_mod[cl_id][:], s=1.5)
+            ax[0].set_title('cl')
+            ax[1].scatter(center_lons.flatten(), center_lats.flatten(), c=gribfield_mod[lsm_id][:], s=1.5)
+            ax[1].set_title('lsm')
+            ax[2].scatter(center_lons.flatten(), center_lats.flatten(), c=caspian_lsm[:], s=1.5)
+            ax[2].set_title('caspian lsm')
+            figname = 'output/plots/lsm_modifications_T%d.png' % (res_num,)
+            fig.savefig(figname, format='png')
                  
                   
     print('Adding: ', manual_coastline_addition)
@@ -557,7 +580,7 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
     lsm_binary_a = gribfield_mod[lsm_id]
     lsm_binary_a = lsm_binary_a[np.newaxis, :]
 
-    return (lsm_binary_a,lsm_binary_l, gribfield_mod)
+    return (lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
 
 
 def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
@@ -623,7 +646,7 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
     gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields)
-    lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm(gribfield, 
+    lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
                                                            manual_basin_removal, 
                                                            manual_coastline_addition, 
                                                            lsm_id, slt_id, cl_id, 
@@ -631,10 +654,10 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
                                                            center_lons)
     write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
               grid_name_oce, num_fields, gid)
-    return (lsm_binary_a,lsm_binary_l)
+    return (lsm_binary_a,lsm_binary_l,lsm_binary_r)
 
 
-def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a ,lsm_binary_l , NN, input_path_runoff):
+def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a ,lsm_binary_l , lsm_binary_r, NN, input_path_runoff):
     '''
     This function writes the binary masks, areas and grids files for
     oasis3-mct
@@ -721,7 +744,10 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
                 elif grids_name.startswith('L'):
                     id_msk[:, :] = np.round(lsm_binary_l[:, :])
                 elif grids_name.startswith('R'):
-                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
+                    if grid_name_oce == 'ORCA05':
+                        id_msk[:, :] = np.abs(np.round(lsm_binary_r[:, :] - 1))
+                    else:
+                        id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
@@ -983,7 +1009,7 @@ if __name__ == '__main__':
                                  input_path_reduced_grid, input_path_full_grid,
                                  truncation_type)
 
-        lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
+        lsm_binary_a,lsm_binary_l,lsm_binary_r = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, num_fields,
                                  manual_basin_removal, manual_coastline_addition, lons_list,
                                  center_lats, center_lons)
@@ -991,7 +1017,7 @@ if __name__ == '__main__':
         write_oasis_files(res_num,
                           output_path_oasis, dir_path, grid_name_oce,
                           center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
-                          lsm_binary_a, lsm_binary_l, NN, input_path_runoff)
+                          lsm_binary_a, lsm_binary_l, lsm_binary_r, NN, input_path_runoff)
 
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal)
