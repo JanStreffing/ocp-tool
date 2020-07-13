@@ -46,6 +46,10 @@ import gribapi
 from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 from shutil import copy2
+from lib import read_grid_file
+from lib import extract_grid_data
+from lib import calculate_corner_latlon
+
 
 #-----------------------------------------------------------------------------
 # Setup
@@ -53,159 +57,18 @@ from shutil import copy2
 
 # Setting constants
 earth_radius = 6371. * 1e3 #[m]
-longline = ' \n ==================================================  \n'
 
 
 #-----------------------------------------------------------------------------
 # Function definitions
 #-----------------------------------------------------------------------------
 
-def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type):
-    '''
-    This function reads the reduced gaussian gridfile and returns it as a raw
-    field
-    '''
-    if truncation_type == 'linear':
-        # linear truncation (T = NN * 2 - 1)
-        NN = res_num/2 + 0.5
-        grid_txt = '%s/n%d_reduced.txt' % (input_path_reduced_grid, NN)
-    elif truncation_type == 'cubic-octahedral':
-        # cubic octahedral truncation (T = NN - 1)
-        NN = res_num + 1
-        grid_txt = '%s/o%d_reduced.txt' % (input_path_reduced_grid, NN)
-
-    print(' Read grid from file: %s ' % (grid_txt,) )
-
-    print(longline)
-    print(' Reading gridfiles for T%d ' % (res_num))
-    print(longline)
-
-    fin = open(grid_txt, 'r')
-    lines = fin.readlines()
-    return (lines, NN)
 
 
-def extract_grid_data(lines):
-    '''
-    This function takes the raw reduced gaussian coordinate list and returns
-    coordinate and neighbour distrance lists for latitude and
-    longitude of every grindpoint, as well as the number of latitudes and
-    longitudes
-    '''
-    gridsize = 0
-    lons_list       = []  # longitudes of each gridpoint
-    lats_list       = []  # latitudes of each gridpoint
-    numlons_list    = []  # number of longitude points for each latitude
-    dlon_list       = []  # longitude distance in degree at each latitude
-    lat_list        = []  # list of latitudes
-
-    for line in lines[3:]:
-        # read latitude number, number of longitudes for red. Gaussian and regular Gauss grids
-        # convert from strings to floats
-        print(line)
-        _, red_points, _, lat = (float(z) for z in line.split())
-
-        # longitudes for reduced Gaussian grid
-        dlon = float(360)/red_points
-        #The -0.000000001 deals with rounding errors a la 360./644*360=359.9999999999994
-        lons = np.arange(0, 360-0.000000001, dlon)
-        numlons_list.append(int(red_points))
-        dlon_list.append(dlon)
-        lat_list.append(lat)
-
-        # set longitudes/latitudes for reduced Gaussian grid on this latitude
-        lons_list.extend(lons)
-        lats_list.extend([lat]*len(lons))
-        gridsize += len(lons)
-
-    return (lons_list, lats_list, numlons_list, dlon_list, lat_list)
 
 
-def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
-                            lat_list):
-    '''
-    This function calculates the latitude and longitude values at the corners
-    of the gridcells based on the center values. It also saves both the corner
-    and center coordinates into a float32 arrays with oasis3-mct compatible
-    structure
-    '''
 
-    # OASIS requires grids to be 2D, but IFS grid is 1D, so we give it an
-    # extra dimension.
-    center_lons = np.array(lons_list, dtype='float32')[np.newaxis, :]
-    center_lats = np.array(lats_list, dtype='float32')[np.newaxis, :]
-    nx = center_lons.shape[1]
-    ny = 1
 
-    print(' Size of grid: nx = %d, ny = %d' % (nx, ny))
-
-    # Now we calculate longitudes/latitudes of corner points for each grid cell
-    crn_lons = np.zeros((4, ny, nx))
-    crn_lats = np.zeros((4, ny, nx))
-
-    kk = 0 # cell index
-    for ii, ni in enumerate(numlons_list):
-        '''
-        Layout of the four corners
-
-        2 ---------- 1
-        |            |
-        |            |
-        |            |
-        3 -----------4
-
-        ^ y
-        |
-        |
-        |
-        ----> x
-        '''
-
-        dlon = dlon_list[ii]
-        lat  = lat_list[ii]
-        lons = np.arange(0, 360, dlon)
-
-        #     NP --- j=1 ---|--- j=2 ---|--- j=3 ---|--- j=n --- SP
-        #                           <-dlat_n-> <-dlat_s->
-
-        # if first latitude, the previous point was north pole
-        if ii == 0:
-            dlat_n = 90 - lat
-            dlat_s = (lat - lat_list[ii+1]) / 2.
-
-        # if last latitude, the next point is south pole
-        elif ii == len(numlons_list)-1:
-            dlat_n = (lat_list[ii-1] - lat) / 2.
-            dlat_s = lat + 90
-
-        else:
-            dlat_n = (lat_list[ii-1] - lat) / 2.
-            dlat_s = (lat - lat_list[ii+1]) / 2.
-
-    for jj in range(ni):
-        # corner 1: north-east
-        crn_lons[0, 0, kk] = lons[jj] + dlon/2.
-        crn_lats[0, 0, kk] = lat + dlat_n/2.
-
-        # corner 2: north-west
-        crn_lons[1, 0, kk] = lons[jj] - dlon/2.
-        crn_lats[1, 0, kk] = lat + dlat_n/2.
-
-        # corner 3: south-west
-        crn_lons[2, 0, kk] = lons[jj] - dlon/2.
-        crn_lats[2, 0, kk] = lat - dlat_s/2.
-
-        # corner 4: south-east
-        crn_lons[3, 0, kk] = lons[jj] + dlon/2.
-        crn_lats[3, 0, kk] = lat - dlat_s/2.
-
-        kk += 1
-
-    # Make sure that longitudes are [-180, 180] and not [0, 360]
-    center_lons = np.where( center_lons > 180, center_lons - 360, center_lons )
-    crn_lons    = np.where( crn_lons > 180, crn_lons - 360, crn_lons )
-
-    return (center_lats, center_lons, crn_lats, crn_lons)
 
 
 def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
@@ -322,6 +185,9 @@ def autoselect_coastline(grid_name_oce, truncation_type, res_num):
         return ['tanquary-fiord', 'spencer-golf', 'ingrid-christensen-coast', 
                 'jennings-promontory', 'princess-martha-coast-east', 
                 'princess-martha-coast-center', 'princess-martha-coast-west']
+    if grid_name_oce == 'CORE2' and truncation_type == 'linear' and res_num == 159:
+        return ['coronation-queen-maude', 'saint-lawrence', 'jennings-promontory']       
+
 
 
 def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition, 
@@ -345,101 +211,111 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
             gribfield_mod[slt_id][i] = 6
             gribfield_mod[lsm_id][i] = 1
 
-    print('Removing: ', manual_basin_removal)
-    for basin in manual_basin_removal:
-
-        if basin == 'caspian-sea':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 36 and center_lats[0, ia] < 47 and center_lons[0, ia] > 46 and center_lons[0, ia] < 56:
-                  gribfield_mod[lsm_id][ia] = 1
-                  gribfield_mod[slt_id][ia] = 6
-
-        if basin == 'black-sea':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 40.5 and center_lats[0, ia] < 48 and center_lons[0, ia] > 27 and center_lons[0, ia] < 43:
-                  gribfield_mod[lsm_id][ia] = 1
-                  gribfield_mod[slt_id][ia] = 6
-
-        if basin == 'white-sea':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 63 and center_lats[0, ia] < 67 and center_lons[0, ia] > 31 and center_lons[0, ia] < 41:
-                  gribfield_mod[lsm_id][ia] = 1
-                  gribfield_mod[slt_id][ia] = 6
-
-        if basin == 'gulf-of-ob':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 65 and center_lats[0, ia] < 71 and center_lons[0, ia] > 70 and center_lons[0, ia] < 79:
-                  print('gulf-of-ob lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 1
-                  gribfield_mod[slt_id][ia] = 6
-
-        if basin == 'persian-gulf':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 21 and center_lats[0, ia] < 31 and center_lons[0, ia] > 46 and center_lons[0, ia] < 59:
-                  gribfield_mod[lsm_id][ia] = 1
-                  gribfield_mod[slt_id][ia] = 6
-
-        if basin == 'coronation-queen-maude':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 48 and center_lats[0, ia] < 55 and center_lons[0, ia] > -102 and center_lons[0, ia] < -94:
-                  print('coronation-queen-maude lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 1
-                  gribfield_mod[slt_id][ia] = 6
-                  
-                  
-    print('Adding: ', manual_coastline_addition)
-    for coastline in manual_coastline_addition:
-        
-        if coastline == 'tanquary-fiord':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 79.5 and center_lats[0, ia] < 81.5 and center_lons[0, ia] > -102 and center_lons[0, ia] < -98:
-                  print('tanquary-fiord lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0
-
-        if coastline == 'spencer-golf':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -35 and center_lats[0, ia] < -34 and center_lons[0, ia] > 137 and center_lons[0, ia] < 137.5:
-                  print('spencer-golf lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0
-                  
-        if coastline == 'ingrid-christensen-coast':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -67 and center_lats[0, ia] < -65 and center_lons[0, ia] > 97 and center_lons[0, ia] < 100:
-                  print('ingrid-christensen-coast lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0    
-                  
-        if coastline == 'jennings-promontory':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -71 and center_lats[0, ia] < -68 and center_lons[0, ia] > 68.5 and center_lons[0, ia] < 71.6:
-                  print('jennings-promontory lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0   
-                  
-        if coastline == 'princess-martha-coast-east':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -71.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 25 and center_lons[0, ia] < 27:
-                  print('princess-martha-coast-east lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0   
-                  
-        if coastline == 'princess-martha-coast-center':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -70.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 16 and center_lons[0, ia] < 19:
-                  print('princess-martha-coast-center lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0  
-                  
-        if coastline == 'princess-martha-coast-west':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -72 and center_lats[0, ia] < -70 and center_lons[0, ia] > -2.5 and center_lons[0, ia] < 2.5:
-                  print('princess-martha-coast-west lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0  
+    if manual_basin_removal:
+        print('Removing: ', manual_basin_removal)
+        for basin in manual_basin_removal:
     
-
+            if basin == 'caspian-sea':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 36 and center_lats[0, ia] < 47 and center_lons[0, ia] > 46 and center_lons[0, ia] < 56:
+                      gribfield_mod[lsm_id][ia] = 1
+                      gribfield_mod[slt_id][ia] = 6
+    
+            if basin == 'black-sea':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 40.5 and center_lats[0, ia] < 48 and center_lons[0, ia] > 27 and center_lons[0, ia] < 43:
+                      gribfield_mod[lsm_id][ia] = 1
+                      gribfield_mod[slt_id][ia] = 6
+    
+            if basin == 'white-sea':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 63 and center_lats[0, ia] < 67 and center_lons[0, ia] > 31 and center_lons[0, ia] < 41:
+                      gribfield_mod[lsm_id][ia] = 1
+                      gribfield_mod[slt_id][ia] = 6
+    
+            if basin == 'gulf-of-ob':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 65 and center_lats[0, ia] < 71 and center_lons[0, ia] > 70 and center_lons[0, ia] < 79:
+                      print('gulf-of-ob lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 1
+                      gribfield_mod[slt_id][ia] = 6
+    
+            if basin == 'persian-gulf':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 21 and center_lats[0, ia] < 31 and center_lons[0, ia] > 46 and center_lons[0, ia] < 59:
+                      gribfield_mod[lsm_id][ia] = 1
+                      gribfield_mod[slt_id][ia] = 6
+    
+                  
+                  
+    if manual_coastline_addition:
+        print('Adding: ', manual_coastline_addition)
+        for coastline in manual_coastline_addition:
+            
+            if coastline == 'tanquary-fiord':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 79.5 and center_lats[0, ia] < 81.5 and center_lons[0, ia] > -102 and center_lons[0, ia] < -98:
+                      print('tanquary-fiord lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+    
+            if coastline == 'spencer-golf':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -33 and center_lats[0, ia] < -32 and center_lons[0, ia] > 137 and center_lons[0, ia] < 137.5:
+                      print('spencer-golf lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+                      
+            if coastline == 'ingrid-christensen-coast':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -67 and center_lats[0, ia] < -65 and center_lons[0, ia] > 97 and center_lons[0, ia] < 100:
+                      print('ingrid-christensen-coast lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0    
+                      
+            if coastline == 'jennings-promontory':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -71 and center_lats[0, ia] < -68 and center_lons[0, ia] > 68.5 and center_lons[0, ia] < 71.6:
+                      print('jennings-promontory lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0   
+                      
+            if coastline == 'princess-martha-coast-east':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -71.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 25 and center_lons[0, ia] < 27:
+                      print('princess-martha-coast-east lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0   
+                      
+            if coastline == 'princess-martha-coast-center':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -70.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 16 and center_lons[0, ia] < 19:
+                      print('princess-martha-coast-center lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0  
+                      
+            if coastline == 'princess-martha-coast-west':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -72 and center_lats[0, ia] < -70 and center_lons[0, ia] > -2.5 and center_lons[0, ia] < 2.5:
+                      print('princess-martha-coast-west lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0  
+                      
+            if coastline == 'saint-lawrence':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 48 and center_lats[0, ia] < 49 and center_lons[0, ia] > -69.2 and center_lons[0, ia] < -65.5:
+                      if gribfield_mod[lsm_id][ia] != 0:
+                         print('saint-lawrence lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                         gribfield_mod[lsm_id][ia] = 0
+                         gribfield_mod[slt_id][ia] = 0  
+                         
+            if coastline == 'coronation-queen-maude':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 70 and center_lats[0, ia] < 70.5 and center_lons[0, ia] > -112.6 and center_lons[0, ia] < -111.5:
+                      if gribfield_mod[lsm_id][ia] != 0:
+                         print('coronation-queen-maude lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                         gribfield_mod[lsm_id][ia] = 0
+                         gribfield_mod[slt_id][ia] = 0  
 
     # Mask with lakes counting as land in correct format for oasis3-mct file
     lsm_binary_a = gribfield_mod[lsm_id]
@@ -490,9 +366,9 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
     the full and reduced gaussian gridfiles for a given truncation number.
     '''
 
-    lines, NN = read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
-    lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data(lines)
-    center_lats, center_lons, crn_lats, crn_lons = calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list, lat_list)
+    lines, NN = read_grid_file.read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
+    lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data.extract_grid_data(lines)
+    center_lats, center_lons, crn_lats, crn_lons = calculate_corner_latlon.calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list, lat_list)
     gridcell_area = calculate_area(center_lons, numlons_list, dlon_list, lat_list)
 
     return (center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN)
@@ -634,7 +510,6 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
         nc.close()
         print(' Wrote %s ' % (filename,))
 
-        print(longline)
 
 
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
@@ -800,15 +675,15 @@ if __name__ == '__main__':
 
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [159]
+    res_num = 255
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'cubic-octahedral'
+    truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    #exp_name_oifs = 'h6mv' #default for linear
-    exp_name_oifs = 'h9wu'#default for cubic-octahedral
+    exp_name_oifs = 'h9wn' #default for linear
+    #exp_name_oifs = 'h9wu'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50
@@ -820,7 +695,7 @@ if __name__ == '__main__':
     # do manual basin removal, list them in manual_basin_removal below. If you
     # want to remove a basin not yet added (e.g.) for paleo simulations, add
     # the basin in section def modify_lsm and def modify_runoff_map
-    grid_name_oce = 'CORE2'
+    grid_name_oce = 'LR'
 
     # There is automatic removal of lakes via the lake file. To remove larger
     # features, e.g. coastal seas for low res or paleo simulations list them
@@ -836,7 +711,7 @@ if __name__ == '__main__':
     # resolution, the coastlines in question will be selected for you.
     manual_coastline_addition = autoselect_coastline(grid_name_oce, 
                                                      truncation_type, 
-                                                     resolution_list[0])
+                                                     res_num)
 
 
     # Find working directory
@@ -858,33 +733,30 @@ if __name__ == '__main__':
     output_path_runoff = 'output/runoff_map_modified/'
     output_path_oasis = 'output/oasis_mct3_input/'
 
-    # Loop over atmosphere resolutions. Todo: select correct exp_name_oifs
-    for res_num in resolution_list:
-
-        center_lats, center_lons, \
-        crn_lats, crn_lons, \
-        gridcell_area, lons_list, \
-        NN = generate_coord_area(res_num,
+    center_lats, center_lons, \
+    crn_lats, crn_lons, \
+    gridcell_area, lons_list, \
+    NN = generate_coord_area(res_num,
                                  input_path_reduced_grid, input_path_full_grid,
                                  truncation_type)
 
-        lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
+    lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, num_fields,
                                  manual_basin_removal, manual_coastline_addition, lons_list,
                                  center_lats, center_lons)
 
-        write_oasis_files(res_num,
+    write_oasis_files(res_num,
                           output_path_oasis, dir_path, grid_name_oce,
                           center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
                           lsm_binary_a, lsm_binary_l, NN, input_path_runoff)
 
-        lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
+    lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal)
 
-        modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
+    modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                           output_path_oasis)
 
-        plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons)
+    plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons)
 
 
 
