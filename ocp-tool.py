@@ -42,6 +42,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import gribapi
+import csv
 
 from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
@@ -257,6 +258,26 @@ def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
             kk += 1
 
     return(gridcell_area)
+
+def write_red_point_file(lats_list, lons_list, output_path_oifs, truncation_type, NN):
+    '''
+    This function write the red_point.txt file for OpenIFS
+    '''
+
+    if truncation_type == "linear":
+        redpoint_txt = '%s/TL%d_red_points.txt' % (output_path_oifs,NN*2-1)
+    elif truncation_type == "cubic-octahedral":
+        redpoint_txt = '%s/TCO%d_red_points.txt' % (output_path_oifs,NN-1)
+
+    with open(redpoint_txt, 'w') as f:
+        f.write("gridtype  = cell\n")
+        f.write("gridsize  = " + str(len(lons_list)) + "\n")
+        f.write("xvals     = ")
+        for item in lons_list:
+            f.write("%s\n" % item)
+        f.write("yvals     = ")
+        for item in lats_list:
+            f.write("%s\n" % item)
 
 
 def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields):
@@ -494,6 +515,7 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
     lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data(lines)
     center_lats, center_lons, crn_lats, crn_lons = calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list, lat_list)
     gridcell_area = calculate_area(center_lons, numlons_list, dlon_list, lat_list)
+    write_red_point_file(lats_list, lons_list, output_path_oifs, truncation_type, NN)
 
     return (center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN)
 
