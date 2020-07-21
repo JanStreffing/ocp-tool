@@ -409,57 +409,58 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
                   
                   
     print('Adding: ', manual_coastline_addition)
-    for coastline in manual_coastline_addition:
-        
-        if coastline == 'tanquary-fiord':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > 79.5 and center_lats[0, ia] < 81.5 and center_lons[0, ia] > -102 and center_lons[0, ia] < -98:
-                  print('tanquary-fiord lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0
-
-        if coastline == 'spencer-golf':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -35 and center_lats[0, ia] < -34 and center_lons[0, ia] > 137 and center_lons[0, ia] < 137.5:
-                  print('spencer-golf lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0
-                  
-        if coastline == 'ingrid-christensen-coast':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -67 and center_lats[0, ia] < -65 and center_lons[0, ia] > 97 and center_lons[0, ia] < 100:
-                  print('ingrid-christensen-coast lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0    
-                  
-        if coastline == 'jennings-promontory':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -71 and center_lats[0, ia] < -68 and center_lons[0, ia] > 68.5 and center_lons[0, ia] < 71.6:
-                  print('jennings-promontory lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0   
-                  
-        if coastline == 'princess-martha-coast-east':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -71.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 25 and center_lons[0, ia] < 27:
-                  print('princess-martha-coast-east lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0   
-                  
-        if coastline == 'princess-martha-coast-center':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -70.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 16 and center_lons[0, ia] < 19:
-                  print('princess-martha-coast-center lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0  
-                  
-        if coastline == 'princess-martha-coast-west':
-            for ia in range(len(lons_list)):
-               if center_lats[0, ia] > -72 and center_lats[0, ia] < -70 and center_lons[0, ia] > -2.5 and center_lons[0, ia] < 2.5:
-                  print('princess-martha-coast-west lat, lon:',center_lats[0, ia], center_lons[0, ia])
-                  gribfield_mod[lsm_id][ia] = 0
-                  gribfield_mod[slt_id][ia] = 0  
+    if manual_coastline_addition: 
+        for coastline in manual_coastline_addition:
+            
+            if coastline == 'tanquary-fiord':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 79.5 and center_lats[0, ia] < 81.5 and center_lons[0, ia] > -102 and center_lons[0, ia] < -98:
+                      print('tanquary-fiord lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
     
+            if coastline == 'spencer-golf':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -35 and center_lats[0, ia] < -34 and center_lons[0, ia] > 137 and center_lons[0, ia] < 137.5:
+                      print('spencer-golf lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+                      
+            if coastline == 'ingrid-christensen-coast':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -67 and center_lats[0, ia] < -65 and center_lons[0, ia] > 97 and center_lons[0, ia] < 100:
+                      print('ingrid-christensen-coast lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0    
+                      
+            if coastline == 'jennings-promontory':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -71 and center_lats[0, ia] < -68 and center_lons[0, ia] > 68.5 and center_lons[0, ia] < 71.6:
+                      print('jennings-promontory lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0   
+                      
+            if coastline == 'princess-martha-coast-east':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -71.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 25 and center_lons[0, ia] < 27:
+                      print('princess-martha-coast-east lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0   
+                      
+            if coastline == 'princess-martha-coast-center':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -70.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 16 and center_lons[0, ia] < 19:
+                      print('princess-martha-coast-center lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0  
+                      
+            if coastline == 'princess-martha-coast-west':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > -72 and center_lats[0, ia] < -70 and center_lons[0, ia] > -2.5 and center_lons[0, ia] < 2.5:
+                      print('princess-martha-coast-west lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0  
+        
 
 
     # Mask with lakes counting as land in correct format for oasis3-mct file
@@ -842,7 +843,7 @@ if __name__ == '__main__':
     # do manual basin removal, list them in manual_basin_removal below. If you
     # want to remove a basin not yet added (e.g.) for paleo simulations, add
     # the basin in section def modify_lsm and def modify_runoff_map
-    grid_name_oce = 'CORE2'
+    grid_name_oce = 'HR'
 
     # There is automatic removal of lakes via the lake file. To remove larger
     # features, e.g. coastal seas for low res or paleo simulations list them
