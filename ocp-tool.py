@@ -49,114 +49,22 @@ from shutil import copy2
 from lib import read_grid_file
 from lib import extract_grid_data
 from lib import calculate_corner_latlon
+from lib import calculate_area
+from lib import write_red_point_file
+from lib import read_lsm
 
 
 #-----------------------------------------------------------------------------
 # Setup
 #-----------------------------------------------------------------------------
 
-# Setting constants
-earth_radius = 6371. * 1e3 #[m]
+
 
 
 #-----------------------------------------------------------------------------
 # Function definitions
 #-----------------------------------------------------------------------------
 
-
-
-
-
-
-
-
-
-def calculate_area(center_lons, numlons_list, dlon_list, lat_list):
-    '''
-    This function calculates the area of the gridcells based on the center
-    values and saves them into a float32 array with oasis3-mct compatible
-    structure
-    '''
-
-    # OASIS requires grids to be 2D, but IFS grid is 1D, so we give it an
-    # extra dimension.
-    nx = center_lons.shape[1]
-    ny = 1
-
-     # Now we calculate the cell area of each cell
-    gridcell_area = np.zeros((ny, nx))
-
-    kk = 0 # cell index
-    for ii, ni in enumerate(numlons_list):
-
-        dlon = dlon_list[ii]
-        lat  = lat_list[ii]
-        lons = np.arange(0, 360, dlon)
-
-        #     NP --- j=1 ---|--- j=2 ---|--- j=3 ---|--- j=n --- SP
-        #                           <-dlat_n-> <-dlat_s->
-
-        # if first latitude, the previous point was north pole
-        if ii == 0:
-            dlat_n = 90 - lat
-            dlat_s = (lat - lat_list[ii+1]) / 2.
-
-        # if last latitude, the next point is south pole
-        elif ii == len(numlons_list)-1:
-            dlat_n = (lat_list[ii-1] - lat) / 2.
-            dlat_s = lat + 90
-
-        else:
-            dlat_n = (lat_list[ii-1] - lat) / 2.
-            dlat_s = (lat - lat_list[ii+1]) / 2.
-
-        # Grid cell areas in m2 width in latitude of cell is dlat_n + dlat_s
-        dx = dlon * np.pi/180. * earth_radius * np.cos( np.pi/180. * lat )
-        dy = (dlat_n + dlat_s) * np.pi/180. * earth_radius
-        area = dx * dy
-
-        for jj in range(ni):
-            gridcell_area[0, kk] = area
-            kk += 1
-
-    return(gridcell_area)
-
-
-def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields):
-    '''
-    This function reads the oifs input file in grib format and save it into a
-    list of numpy arrays.
-    '''
-    print(' Opening Grib inpute file: %s ' % (input_path_oifs,))
-    input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
-    gid = [None] * num_fields
-    gribfield = [None] * num_fields
-    with open(input_file_oifs, 'r+') as f:
-        keys = ['N', 'shortName']
-
-        for i in range(num_fields):
-            gid[i] = gribapi.grib_new_from_file(f)
-            if gid[i] is None:
-                break
-
-            for key in keys:
-                if not gribapi.grib_is_defined(gid[i], key):
-                    raise ValueError("Key '%s' was not defined" % key)
-                print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
-
-            shortName = gribapi.grib_get(gid[i], 'shortName')
-
-            if shortName == 'lsm':
-                lsm_id = i
-            if shortName == 'slt':
-                slt_id = i
-            if shortName == 'cl':
-                cl_id = i
-
-            nres = gribapi.grib_get(gid[i], 'N')
-            gribfield[i] = gribapi.grib_get_values(gid[i])
-
-    return (gribfield, lsm_id, slt_id, cl_id, gid)
 
 
 def autoselect_basins(grid_name_oce):
@@ -369,7 +277,8 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
     lines, NN = read_grid_file.read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
     lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data.extract_grid_data(lines)
     center_lats, center_lons, crn_lats, crn_lons = calculate_corner_latlon.calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list, lat_list)
-    gridcell_area = calculate_area(center_lons, numlons_list, dlon_list, lat_list)
+    gridcell_area = calculate_area.calculate_area(center_lons, numlons_list, dlon_list, lat_list)
+    write_red_point_file.write_red_point_file(lats_list, lons_list, output_path_oifs, truncation_type, NN)
 
     return (center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN)
 
@@ -383,7 +292,7 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
     modified in the exact same locations
     '''
 
-    gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, 
+    gribfield, lsm_id, slt_id, cl_id, gid = read_lsm.read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields)
     lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm(gribfield, 

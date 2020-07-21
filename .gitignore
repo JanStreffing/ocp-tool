@@ -1,4 +1,8 @@
 output/
 *~lock*
 *ICMGG*
+<<<<<<< HEAD
 *pyc
+=======
+*.pyc
+>>>>>>> master

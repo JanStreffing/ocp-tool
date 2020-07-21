@@ -12,8 +12,8 @@ def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, trunc
     
 
     INPUT:
-    res_num 			OpenIFS truncation number
-    input_path_reduced_grid	Path to folder containing reduced Gaussian grid definitition files
+    res_num 			        OpenIFS truncation number
+    input_path_reduced_grid	    Path to folder containing reduced Gaussian grid definitition files
     input_path_full_grid        Path to folder containing full Gaussian grid definitition files
     truncation_type             OpenIFS truncation type (linear, quadratic, cubic octahedral)
 
