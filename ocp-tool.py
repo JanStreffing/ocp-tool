@@ -46,12 +46,8 @@ import gribapi
 from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 from shutil import copy2
-from lib import read_grid_file
-from lib import extract_grid_data
-from lib import calculate_corner_latlon
-from lib import calculate_area
-from lib import write_red_point_file
-from lib import read_lsm
+from lib import (read_grid_file, extract_grid_data, calculate_corner_latlon, 
+                calculate_area, write_red_point_file, read_lsm)
 
 
 #-----------------------------------------------------------------------------
