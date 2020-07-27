@@ -4,7 +4,7 @@ channels:
   - eumetsat
 dependencies:
   - python=2.7
-  - ecmwf-eccodes-python
+  - python-eccodes
   - netcdf4
   - matplotlib
   - basemap
