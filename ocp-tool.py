@@ -61,7 +61,7 @@ longline = ' \n ==================================================  \n'
 # Function definitions
 #-----------------------------------------------------------------------------
 
-def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type):
+def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type, exp_name_oifs='hagw', input_path_oifs='input/openifs_input_default/'):
     '''
     This function reads the reduced gaussian gridfile and returns it as a raw
     field
@@ -70,6 +70,7 @@ def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, trunc
         # linear truncation (T = NN * 2 - 1)
         NN = res_num/2 + 0.5
         grid_txt = '%s/n%d_reduced.txt' % (input_path_reduced_grid, NN)
+        
     elif truncation_type == 'cubic-octahedral':
         # cubic octahedral truncation (T = NN - 1)
         NN = res_num + 1
@@ -80,10 +81,106 @@ def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, trunc
     print(longline)
     print(' Reading gridfiles for T%d ' % (res_num))
     print(longline)
-
-    fin = open(grid_txt, 'r')
+    
+    if os.path.isfile(grid_txt):
+       fin = open(grid_txt, 'r')
+    else:
+       icmfile = '%s/ICMGG%sINIT' % (input_path_oifs, exp_name_oifs) 
+       grid_txt = read_grid_from_icmgg(icmfile, NN, truncation_type)
+       fin = open(grid_txt, 'r')
+       
     lines = fin.readlines()
     return (lines, NN)
+
+
+def read_grid_from_icmgg(icmfile, NN, truncation_type):
+   """
+   Read lon, lats from grib template file
+   Uses CDO to get grid description from a GRIB file
+   """
+   
+   latitudes = []
+   nlongitudes = []
+   
+   file=icmfile
+   
+   # write grid description to file
+   # only need to do this once
+   os.system('cdo griddes %s > griddes.txt' % (file,))
+   
+   # read data from text file
+   f = open('griddes.txt','r')
+   lines = f.readlines()   
+   for i in range(0,len(lines)):      
+      if 'yvals' in lines[i]:
+         yline = i
+      elif 'rowlon' in lines[i] or 'reducedPoints' in lines[i]:
+         rline = i
+   
+   # read from yvals until we hit rowlon   
+   for i in range(yline,len(lines)):
+      line = lines[i]
+      print(line)
+      if 'rowlon' in line or 'reducedPoints' in line:
+         break
+      if i == yline:
+         # convert data to floats
+         tmp_lat = [float(lat) for lat in line.split()[2:]]
+      else:
+         tmp_lat = [float(lat) for lat in line.split()]
+      # append data to latitudes list
+      for lat in tmp_lat: latitudes.append(lat) 
+      
+   for i in range(rline,len(lines)):
+      line = lines[i]
+      if 'scanningMode' in line: 
+         break 
+      if i == rline:
+         # convert to integers
+         tmp_nlon = [int(nlon) for nlon in line.split()[2:]]
+      else:
+         tmp_nlon = [int(nlon) for nlon in line.split()]
+      # append data to nlongitudes list
+      for nlon in tmp_nlon: nlongitudes.append(nlon) 
+         
+   f.close()
+   
+   print('nlon: ',nlongitudes)
+   print('lat: ',latitudes)
+   
+   # Now construct the grid
+   lons = []
+   lats = []
+   for ilat in range(0,len(nlongitudes)):
+      
+      lat  = latitudes[ilat]
+      nlon = nlongitudes[ilat]
+      
+      lon1  = np.arange(0,360,360./nlon)
+      
+      for lon in lon1: 
+         lons.append(lon)
+         lats.append(lat)   
+   
+   if truncation_type == 'cubic-octahedral':
+      ngrid = 'o%d' % (NN,)
+      rfile = 'input/gaussian_grids_octahedral_reduced/%s_reduced.txt' % (ngrid,)
+      
+   elif truncation_type == 'linear':
+      ngrid = 'n%d' % (NN,)
+      rfile = 'input/gaussian_grids_linear_reduced/%s_reduced.txt' % (ngrid,)
+   
+   # Write to text file that CDO can use for interpolations
+   f = open(rfile,'w')
+   f.write('latitude reduced regular latitude \n')
+   f.write('number points points \n')
+   f.write(' ------- ------- ------- ---------- \n' )
+   
+   for ilat in range(0,len(nlongitudes)):
+      f.write('%d %d %d %f \n' % (ilat+1, nlongitudes[ilat], len(nlongitudes)*2, latitudes[ilat]))
+   f.close()
+   
+   return rfile
 
 
 def extract_grid_data(lines):
@@ -328,6 +425,8 @@ def autoselect_basins(grid_name_oce):
                 'persian-gulf' ] #, 'coronation-queen-maude']
     elif (grid_name_oce == 'MR') or (grid_name_oce == 'HR'):
         return ['caspian-sea']
+    elif (grid_name_oce == 'ORCA05'):
+        return ['all-but-caspian-sea']
     else:
         return []
 
@@ -343,6 +442,8 @@ def autoselect_coastline(grid_name_oce, truncation_type, res_num):
         return ['tanquary-fiord', 'spencer-golf', 'ingrid-christensen-coast', 
                 'jennings-promontory', 'princess-martha-coast-east', 
                 'princess-martha-coast-center', 'princess-martha-coast-west']
+    else:
+        return []
 
 
 def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition, 
@@ -357,6 +458,7 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
     import copy
     lsm_binary_l = copy.deepcopy(gribfield[lsm_id])
     lsm_binary_l = lsm_binary_l[np.newaxis, :]
+    lsm_binary_r = lsm_binary_l.copy()
 
     # Automatic lake removal with lakes mask
     gribfield_mod = gribfield[:]
@@ -406,7 +508,40 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
                   print('coronation-queen-maude lat, lon:',center_lats[0, ia], center_lons[0, ia])
                   gribfield_mod[lsm_id][ia] = 1
                   gribfield_mod[slt_id][ia] = 6
+        
+        if basin == 'all-but-caspian-sea':
+            # The lake mask is fractional [0,1], where 1 is lake, 0 is no lakes
+            # The lsm is fractional [0,1], where 1 is land, 0 is sea
+            # We need to select the Caspian Sea
+            caspian_lsm = np.zeros(gribfield_mod[cl_id].shape)
+            for ia in range(len(lons_list)):
+               if center_lats[0, ia] > 36 and center_lats[0, ia] < 47 and center_lons[0, ia] > 46 and center_lons[0, ia] < 56:
+                  print(' caspian lake mask ',gribfield_mod[cl_id][ia])
+                  # Select any fraction of lake around the Caspian
+                  # We could also do > 0.5, i.e. only pick points with >50% lake
+                  if gribfield_mod[cl_id][ia] > 0:
+                     caspian_lsm[ia] = gribfield_mod[cl_id][ia]
                   
+            # Remove all lakes by adding lake mask to lsm
+            # Areas with big lakes will be > 1
+            gribfield_mod[lsm_id][:] = gribfield_mod[lsm_id][:] + gribfield_mod[cl_id][:]
+            # Ensure lsm [0,1]
+            gribfield_mod[lsm_id][gribfield_mod[lsm_id] > 1] = 1
+            # The lsm with no lakes whatsoever is used for runoff
+            lsm_binary_r[0,:] = gribfield_mod[lsm_id][:]
+            # Now remove the Caspian Sea from lsm, i.e. make it part of the ocean
+            gribfield_mod[lsm_id][:] = gribfield_mod[lsm_id][:] - caspian_lsm[:]
+            
+            fig, ax = plt.subplots(1,3)
+            ax[0].scatter(center_lons.flatten(), center_lats.flatten(), c=gribfield_mod[cl_id][:], s=1.5)
+            ax[0].set_title('cl')
+            ax[1].scatter(center_lons.flatten(), center_lats.flatten(), c=gribfield_mod[lsm_id][:], s=1.5)
+            ax[1].set_title('lsm')
+            ax[2].scatter(center_lons.flatten(), center_lats.flatten(), c=caspian_lsm[:], s=1.5)
+            ax[2].set_title('caspian lsm')
+            figname = 'output/plots/lsm_modifications_T%d.png' % (res_num,)
+            fig.savefig(figname, format='png')
+                 
                   
     print('Adding: ', manual_coastline_addition)
     if manual_coastline_addition: 
@@ -467,7 +602,7 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
     lsm_binary_a = gribfield_mod[lsm_id]
     lsm_binary_a = lsm_binary_a[np.newaxis, :]
 
-    return (lsm_binary_a,lsm_binary_l, gribfield_mod)
+    return (lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
 
 
 def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
@@ -500,8 +635,9 @@ def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons):
     yptsa = center_lats[np.round(lsm_binary_a[:, :])<1]
     xptsl = center_lons[np.round(lsm_binary_l[:, :])<1]
     yptsl = center_lats[np.round(lsm_binary_l[:, :])<1]
-    ax3.scatter(xptsl, yptsl, s=1.5, color='red')
-    ax3.scatter(xptsa, yptsa, s=2)
+    ax3.scatter(xptsl, yptsl, s=1.5, color='red', label='L wet points')
+    ax3.scatter(xptsa, yptsa, s=2, label='A wet points')
+    ax3.legend()
     figname = 'output/plots/land_points_T%d.png' % (res_num,)
     fig3.savefig(figname, format='png')
 
@@ -533,7 +669,7 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
     gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields)
-    lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm(gribfield, 
+    lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
                                                            manual_basin_removal, 
                                                            manual_coastline_addition, 
                                                            lsm_id, slt_id, cl_id, 
@@ -541,10 +677,10 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
                                                            center_lons)
     write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
               grid_name_oce, num_fields, gid)
-    return (lsm_binary_a,lsm_binary_l)
+    return (lsm_binary_a,lsm_binary_l,lsm_binary_r)
 
 
-def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a ,lsm_binary_l , NN, input_path_runoff):
+def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a ,lsm_binary_l , lsm_binary_r, NN, input_path_runoff):
     '''
     This function writes the binary masks, areas and grids files for
     oasis3-mct
@@ -600,6 +736,7 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
             elif filebase == 'masks':
                 mskname = '%s.msk' % (grids_name,)
                 id_msk = nc.createVariable(mskname, 'int32', (yname, xname))
+                id_msk.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
                 id_msk.valid_min = 0.
                 id_msk.valid_max = 1
 
@@ -607,6 +744,7 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
             elif filebase == 'areas':
                 areaname = '%s.srf' % (grids_name,)
                 id_area = nc.createVariable(areaname, 'float64', (yname, xname))
+                id_area.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
 
             id_lon[:, :] = center_lons[:, :]
             id_lat[:, :] = center_lats[:, :]
@@ -629,7 +767,10 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
                 elif grids_name.startswith('L'):
                     id_msk[:, :] = np.round(lsm_binary_l[:, :])
                 elif grids_name.startswith('R'):
-                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
+                    if grid_name_oce == 'ORCA05':
+                        id_msk[:, :] = np.abs(np.round(lsm_binary_r[:, :] - 1))
+                    else:
+                        id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
@@ -823,7 +964,7 @@ if __name__ == '__main__':
 
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [159]
+    resolution_list = [95]
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'cubic-octahedral'
@@ -831,7 +972,7 @@ if __name__ == '__main__':
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
     #exp_name_oifs = 'h6mv' #default for linear
-    exp_name_oifs = 'h9wu'#default for cubic-octahedral
+    exp_name_oifs = 'hagw'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50
@@ -843,6 +984,7 @@ if __name__ == '__main__':
     # do manual basin removal, list them in manual_basin_removal below. If you
     # want to remove a basin not yet added (e.g.) for paleo simulations, add
     # the basin in section def modify_lsm and def modify_runoff_map
+
     grid_name_oce = 'HR'
 
     # There is automatic removal of lakes via the lake file. To remove larger
@@ -891,7 +1033,7 @@ if __name__ == '__main__':
                                  input_path_reduced_grid, input_path_full_grid,
                                  truncation_type)
 
-        lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
+        lsm_binary_a,lsm_binary_l,lsm_binary_r = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, num_fields,
                                  manual_basin_removal, manual_coastline_addition, lons_list,
                                  center_lats, center_lons)
@@ -899,7 +1041,7 @@ if __name__ == '__main__':
         write_oasis_files(res_num,
                           output_path_oasis, dir_path, grid_name_oce,
                           center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
-                          lsm_binary_a, lsm_binary_l, NN, input_path_runoff)
+                          lsm_binary_a, lsm_binary_l, lsm_binary_r, NN, input_path_runoff)
 
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal)

@@ -1,4 +1,5 @@
 output/
 *~lock*
 *ICMGG*
+griddes.txt 
 *.pyc
