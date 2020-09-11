@@ -1,10 +1,11 @@
-name: ocp-tool
+name: test
 channels:
   - conda-forge
   - eumetsat
 dependencies:
   - python=2.7
-  - ecmwf-eccodes-python
+  - ecmwf-grib-api
   - netcdf4
   - matplotlib
   - basemap
+  - pandas
