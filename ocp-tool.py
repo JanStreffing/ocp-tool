@@ -47,7 +47,8 @@ from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 from shutil import copy2
 from lib import (read_grid_file, extract_grid_data, calculate_corner_latlon, 
-                calculate_area, write_red_point_file, read_lsm, modify_lsm)
+                calculate_area, write_red_point_file, read_lsm, modify_lsm,
+                select_basins)
 
 
 #-----------------------------------------------------------------------------
@@ -60,38 +61,6 @@ from lib import (read_grid_file, extract_grid_data, calculate_corner_latlon,
 #-----------------------------------------------------------------------------
 # Function definitions
 #-----------------------------------------------------------------------------
-
-
-
-def autoselect_basins(grid_name_oce):
-    '''
-    This function selects the list of basins that are to be removed from the
-    OpenIFS land sea mask based on a given ocean grid names.
-    '''
-
-    if grid_name_oce == 'CORE2':
-        return ['caspian-sea', 'black-sea', 'white-sea', 'gulf-of-ob',
-                'persian-gulf' ] #, 'coronation-queen-maude']
-    elif (grid_name_oce == 'MR') or (grid_name_oce == 'HR'):
-        return ['caspian-sea']
-    else:
-        return []
-
-
-def autoselect_coastline(grid_name_oce, truncation_type, res_num):
-    '''
-    This function selects the list of coastlines where ocean points have to 
-    be added to the OpenIFS land sea mask based on a given combination of
-    ocean grid name and atmospheric resolution.
-    '''
-    
-    if grid_name_oce == 'CORE2' and truncation_type == 'cubic-octahedral' and res_num == 159:
-        return ['tanquary-fiord', 'spencer-golf', 'ingrid-christensen-coast', 
-                'jennings-promontory', 'princess-martha-coast-east', 
-                'princess-martha-coast-center', 'princess-martha-coast-west']
-    if grid_name_oce == 'CORE2' and truncation_type == 'linear' and res_num == 159:
-        return ['coronation-queen-maude', 'saint-lawrence', 'jennings-promontory']       
-
 
 
 
@@ -147,8 +116,8 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
 
 
 def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
-                grid_name_oce, num_fields, manual_basin_removal, 
-                manual_coastline_addition, lons_list, center_lats, center_lons):
+                grid_name_oce, num_fields, basin_removal, 
+                coastline_addition, lons_list, center_lats, center_lons):
     '''
     This function first reads, modifies and finally saves the new land
     sea mask. Every step is mirrored for the soil type file as it has to be
@@ -159,8 +128,8 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields)
     lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm.modify_lsm(gribfield, 
-                                                           manual_basin_removal, 
-                                                           manual_coastline_addition, 
+                                                           basin_removal, 
+                                                           coastline_addition, 
                                                            lsm_id, slt_id, cl_id, 
                                                            lons_list, center_lats, 
                                                            center_lons)
@@ -285,7 +254,7 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
 
 
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
-                      grid_name_oce, manual_basin_removal):
+                      grid_name_oce, basin_removal):
     '''
     This function generates coordinate and areas fields based on
     the full and reduced gaussian gridfiles for a given truncation number.
@@ -306,7 +275,7 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
     lons = rnffile.variables[u'lon'][:]
     lats = rnffile.variables[u'lat'][:]
 
-    for basin in manual_basin_removal:
+    for basin in basin_removal:
 
         if basin == 'caspian-sea':
             for lo, lon in enumerate(lons):
@@ -405,7 +374,7 @@ def plotting_runoff(drainage, arrival, lons, lats):
     m.drawmeridians(np.arange(0., 360., 90.))
 
 
-def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
+def modify_runoff_lsm(res_num, grid_name_oce, basin_removal, lons, lats,
                       output_path_oasis):
     '''
     This function generates coordinate and areas fields based on
@@ -419,7 +388,7 @@ def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
     RnfA = oasis.variables[u'RnfA.msk'][:]
     RnfO = oasis.variables[u'RnfO.msk'][:]
 
-    for basin in manual_basin_removal:
+    for basin in basin_removal:
 
         if basin == 'caspian-sea':
             for lo, lon in enumerate(lons):
@@ -470,26 +439,20 @@ if __name__ == '__main__':
     grid_name_oce = 'CORE2'
 
     # There is automatic removal of lakes via the lake file. To remove larger
-    # features, e.g. coastal seas for low res or paleo simulations list them
-    # here. Currently added basins: ['caspian-sea', black-sea', 'white-sea',
-    # 'gulf-of-ob', 'persian-gulf', 'coronation-queen-maude']
-    # If you have chosen a known grid_name_oce the basins will be selected
-    # automatically
-    manual_basin_removal = autoselect_basins(grid_name_oce)
-    
-    # Certain resolution configurations have slightly missmatch coastline, 
-    # whereby the atmosphere acutally needs more ocean points. 
-    # If you have chosen a known combination of grid_name_oce and atmospheric 
-    # resolution, the coastlines in question will be selected for you.
-    manual_coastline_addition = autoselect_coastline(grid_name_oce, 
-                                                     truncation_type, 
-                                                     res_num)
-
+    # features, e.g. coastal seas for low res or paleo simulations manually 
+    # list them in config/grid_modifications.yaml
+    # You can see available grid modifications and add your own in
+    # config/basins_and_coastlines.csv
+    # Besides removing basins you can also add coastlines with this routine.
+    basin_removal, coastline_addition = select_basins.select_basins(grid_name_oce,
+                                                                    truncation_type,
+                                                                    res_num)
 
     # Find working directory
     dir_path = os.path.dirname(os.path.realpath(__file__))
 
-        # Input file directories. Place files in appropriate subfolders or modify
+    # IO file directories. Should work without touching it. If you want 
+    # diffent input folders you can make your selections here.
     if truncation_type == 'cubic-octahedral':
         input_path_reduced_grid = 'input/gaussian_grids_octahedral_reduced/'
     elif truncation_type == 'linear':
@@ -499,12 +462,11 @@ if __name__ == '__main__':
     input_path_full_grid = 'input/gaussian_grids_full/'
     input_path_oifs = 'input/openifs_input_default/'
     input_path_runoff = 'input/runoff_map_default/'
-
-    # Output file directories.
     output_path_oifs = 'output/openifs_input_modified/'
     output_path_runoff = 'output/runoff_map_modified/'
     output_path_oasis = 'output/oasis_mct3_input/'
 
+    
     center_lats, center_lons, \
     crn_lats, crn_lons, \
     gridcell_area, lons_list, \
@@ -514,7 +476,7 @@ if __name__ == '__main__':
 
     lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, num_fields,
-                                 manual_basin_removal, manual_coastline_addition, lons_list,
+                                 basin_removal, coastline_addition, lons_list,
                                  center_lats, center_lons)
 
     write_oasis_files(res_num,
@@ -523,9 +485,9 @@ if __name__ == '__main__':
                           lsm_binary_a, lsm_binary_l, NN, input_path_runoff)
 
     lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
-                                       grid_name_oce, manual_basin_removal)
+                                       grid_name_oce, basin_removal)
 
-    modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
+    modify_runoff_lsm(res_num, grid_name_oce, basin_removal, lons, lats,
                           output_path_oasis)
 
     plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons)

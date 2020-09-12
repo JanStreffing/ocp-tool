@@ -1,0 +1,51 @@
+# AUTHORS:
+# Jan Streffing		2020-09-12	Created
+    
+# DESCRIPTION:
+# This file contains the basins and coastlines that shall be removed from
+# and added to the ocean masks of the grids listed here. The add part 
+# contains an additional layer where different coastlines can be added
+# based on the atmospheric grid.
+    
+
+remove:
+  ORCA1:
+  ORCA25:
+  ORCA12:
+  CORE2:
+    - caspian-sea
+    - black-sea
+    - white-sea
+    - gulf-of-ob
+    - persian-gulf
+  MR:
+    - caspian-sea
+  HR:
+    - caspian-sea
+  ROS2:
+    - caspian-sea
+  ROS4:
+    - caspian-sea
+
+add:
+  ORCA1:
+  ORCA25:
+  ORCA12:
+  CORE2:
+    cubic-octahedral-159:
+      - tanquary-fiord
+      - spencer-golf
+      - ingrid-christensen-coast
+      - jennings-promontory
+      - princess-martha-coast-east
+      - princess-martha-coast-center
+      - princess-martha-coast-west
+    linear-159:
+      - coronation-queen-maude
+      - saint-lawrence
+      - jennings-promontory
+    linear-255:
+  MR:
+  HR:
+  ROS2:
+  ROS4:
