@@ -41,14 +41,13 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-import gribapi
 
 from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 from shutil import copy2
 from lib import (read_grid_file, extract_grid_data, calculate_corner_latlon, 
                 calculate_area, write_red_point_file, read_lsm, modify_lsm,
-                select_basins)
+                select_basins, write_lsm)
 
 
 #-----------------------------------------------------------------------------
@@ -64,23 +63,7 @@ from lib import (read_grid_file, extract_grid_data, calculate_corner_latlon,
 
 
 
-def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
-              grid_name_oce, num_fields, gid):
-    '''
-    This function copies the input gribfile to the output folder and modifies
-    it by writing the whole gribfield_mod, including the altered land sea mask
-    and soil type fields into the new file
-    '''
 
-    input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
-    output_file_oifs = output_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT_' + grid_name_oce
-    copy2(input_file_oifs, output_file_oifs)
-
-    with open(output_file_oifs, 'r+') as f:
-        for i in range(num_fields):
-            gribapi.grib_set_values(gid[i], gribfield_mod[i])
-            gribapi.grib_write(gid[i], f)
-            gribapi.grib_release(gid[i])
 
 
 def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons):
@@ -133,7 +116,7 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
                                                            lsm_id, slt_id, cl_id, 
                                                            lons_list, center_lats, 
                                                            center_lons)
-    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
+    write_lsm.write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
               grid_name_oce, num_fields, gid)
     return (lsm_binary_a,lsm_binary_l)
 

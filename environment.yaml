@@ -1,4 +1,4 @@
-name: test
+name: ocp-tool
 channels:
   - conda-forge
   - eumetsat
