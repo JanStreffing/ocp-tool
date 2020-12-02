@@ -280,24 +280,24 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
             dlat_n = (lat_list[ii-1] - lat) / 2.
             dlat_s = (lat - lat_list[ii+1]) / 2.
 
-    for jj in range(ni):
-        # corner 1: north-east
-        crn_lons[0, 0, kk] = lons[jj] + dlon/2.
-        crn_lats[0, 0, kk] = lat + dlat_n/2.
+        for jj in range(ni):
+            # corner 1: north-east
+            crn_lons[0, 0, kk] = lons[jj] + dlon/2.
+            crn_lats[0, 0, kk] = lat + dlat_n/2.
 
-        # corner 2: north-west
-        crn_lons[1, 0, kk] = lons[jj] - dlon/2.
-        crn_lats[1, 0, kk] = lat + dlat_n/2.
+            # corner 2: north-west
+            crn_lons[1, 0, kk] = lons[jj] - dlon/2.
+            crn_lats[1, 0, kk] = lat + dlat_n/2.
 
-        # corner 3: south-west
-        crn_lons[2, 0, kk] = lons[jj] - dlon/2.
-        crn_lats[2, 0, kk] = lat - dlat_s/2.
+            # corner 3: south-west
+            crn_lons[2, 0, kk] = lons[jj] - dlon/2.
+            crn_lats[2, 0, kk] = lat - dlat_s/2.
 
-        # corner 4: south-east
-        crn_lons[3, 0, kk] = lons[jj] + dlon/2.
-        crn_lats[3, 0, kk] = lat - dlat_s/2.
+            # corner 4: south-east
+            crn_lons[3, 0, kk] = lons[jj] + dlon/2.
+            crn_lats[3, 0, kk] = lat - dlat_s/2.
 
-        kk += 1
+            kk += 1
 
     # Make sure that longitudes are [-180, 180] and not [0, 360]
     center_lons = np.where( center_lons > 180, center_lons - 360, center_lons )
