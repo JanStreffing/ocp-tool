@@ -382,11 +382,11 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     This function reads the oifs input file in grib format and save it into a
     list of numpy arrays.
     '''
-    print(' Opening Grib inpute file: %s ' % (input_path_oifs,))
+    print(' Opening Grib input file: %s ' % (input_path_oifs,))
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
     gid = [None] * num_fields
     gribfield = [None] * num_fields
-    with open(input_file_oifs, 'r+') as f:
+    with open(input_file_oifs, 'r') as f:
         keys = ['N', 'shortName']
 
         for i in range(num_fields):
