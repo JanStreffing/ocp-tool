@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - eumetsat
 dependencies:
+  - python=2.7
   - python-eccodes
   - netcdf4
   - matplotlib
