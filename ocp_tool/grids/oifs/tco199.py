@@ -1,7 +1,7 @@
 from .utils import namedtuple_from_dict
 
 
-Tco199 = namedtuple_from_dict(
+TCO199 = namedtuple_from_dict(
     'TCO199',
     {
         'gridtype': 'gaussian_reduced',
