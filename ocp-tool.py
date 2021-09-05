@@ -283,19 +283,19 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
         for jj in range(ni):
             # corner 1: north-east
             crn_lons[0, 0, kk] = lons[jj] + dlon/2.
-            crn_lats[0, 0, kk] = lat + dlat_n/2.
+            crn_lats[0, 0, kk] = lat + dlat_n
 
             # corner 2: north-west
             crn_lons[1, 0, kk] = lons[jj] - dlon/2.
-            crn_lats[1, 0, kk] = lat + dlat_n/2.
+            crn_lats[1, 0, kk] = lat + dlat_n
 
             # corner 3: south-west
             crn_lons[2, 0, kk] = lons[jj] - dlon/2.
-            crn_lats[2, 0, kk] = lat - dlat_s/2.
+            crn_lats[2, 0, kk] = lat - dlat_s
 
             # corner 4: south-east
             crn_lons[3, 0, kk] = lons[jj] + dlon/2.
-            crn_lats[3, 0, kk] = lat - dlat_s/2.
+            crn_lats[3, 0, kk] = lat - dlat_s
 
             kk += 1
 
