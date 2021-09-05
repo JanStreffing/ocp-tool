@@ -78,14 +78,102 @@ def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons):
     figname = 'output/plots/land_points_T%d.png' % (res_num,)
     fig3.savefig(figname, format='png')
 
+def read_grid_from_icmgg(icmfile, NN, truncation_type):
+   """
+   Read lon, lats from grib template file
+   Uses CDO to get grid description from a GRIB file
+   """
+   
+   latitudes = []
+   nlongitudes = []
+   
+   file=icmfile
+   
+   # write grid description to file
+   # only need to do this once
+   os.system('cdo griddes %s > griddes.txt' % (file,))
+   
+   # read data from text file
+   f = open('griddes.txt','r')
+   lines = f.readlines()   
+   for i in range(0,len(lines)):      
+      if 'yvals' in lines[i]:
+         yline = i
+      elif 'rowlon' in lines[i] or 'reducedPoints' in lines[i]:
+         rline = i
+   
+   # read from yvals until we hit rowlon   
+   for i in range(yline,len(lines)):
+      line = lines[i]
+      print(line)
+      if 'rowlon' in line or 'reducedPoints' in line:
+         break
+      if i == yline:
+         # convert data to floats
+         tmp_lat = [float(lat) for lat in line.split()[2:]]
+      else:
+         tmp_lat = [float(lat) for lat in line.split()]
+      # append data to latitudes list
+      for lat in tmp_lat: latitudes.append(lat) 
+      
+   for i in range(rline,len(lines)):
+      line = lines[i]
+      if 'scanningMode' in line: 
+         break 
+      if i == rline:
+         # convert to integers
+         tmp_nlon = [int(nlon) for nlon in line.split()[2:]]
+      else:
+         tmp_nlon = [int(nlon) for nlon in line.split()]
+      # append data to nlongitudes list
+      for nlon in tmp_nlon: nlongitudes.append(nlon) 
+         
+   f.close()
+   
+   print('nlon: ',nlongitudes)
+   print('lat: ',latitudes)
+   
+   # Now construct the grid
+   lons = []
+   lats = []
+   for ilat in range(0,len(nlongitudes)):
+      
+      lat  = latitudes[ilat]
+      nlon = nlongitudes[ilat]
+      
+      lon1  = np.arange(0,360,360./nlon)
+      
+      for lon in lon1: 
+         lons.append(lon)
+         lats.append(lat)   
+   
+   if truncation_type == 'cubic-octahedral':
+      ngrid = 'o%d' % (NN,)
+      rfile = 'input/gaussian_grids_octahedral_reduced/%s_reduced.txt' % (ngrid,)
+      
+   elif truncation_type == 'linear':
+      ngrid = 'n%d' % (NN,)
+      rfile = 'input/gaussian_grids_linear_reduced/%s_reduced.txt' % (ngrid,)
+   
+   # Write to text file that CDO can use for interpolations
+   f = open(rfile,'w')
+   f.write('latitude reduced regular latitude \n')
+   f.write('number points points \n')
+   f.write(' ------- ------- ------- ---------- \n' )
+   
+   for ilat in range(0,len(nlongitudes)):
+      f.write('%d %d %d %f \n' % (ilat+1, nlongitudes[ilat], len(nlongitudes)*2, latitudes[ilat]))
+   f.close()
+   
+   return rfile
 
-def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type):
+def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type, exp_name_oifs, input_path_oifs):
     '''
     This function generates coordinate and areas fields based on
     the full and reduced gaussian gridfiles for a given truncation number.
     '''
 
-    lines, NN = read_grid_file.read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
+    lines, NN = read_grid_file.read_grid_file(res_num, truncation_type, exp_name_oifs, input_path_oifs)
     lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data.extract_grid_data(lines)
     center_lats, center_lons, crn_lats, crn_lons = calculate_corner_latlon.calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list, lat_list)
     gridcell_area = calculate_area.calculate_area(center_lons, numlons_list, dlon_list, lat_list)
@@ -107,8 +195,9 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
     gribfield, lsm_id, slt_id, cl_id, gid = read_lsm.read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields)
-    mesh_ocean = read_oce.read_oce(grid_name_oce, input_path_oce, lons_list, center_lats, 
+    lsm_oce = read_oce.read_oce(grid_name_oce, input_path_oce, lons_list, center_lats, 
                                    center_lons, crn_lats, crn_lons) 
+    print(lsm_oce)
 
     lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm.modify_lsm(gribfield, 
                                                            basin_removal, 
@@ -346,7 +435,7 @@ if __name__ == '__main__':
     gridcell_area, lons_list, \
     NN = generate_coord_area(res_num,
                                  input_path_reduced_grid, input_path_full_grid,
-                                 truncation_type)
+                                 truncation_type, exp_name_oifs, input_path_oifs)
 
     lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, input_path_oce, num_fields,

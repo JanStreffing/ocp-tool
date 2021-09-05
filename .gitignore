@@ -4,3 +4,4 @@ output/
 *pyc
 *.pyc
 input/ocean_input_default/
+griddes.txt
