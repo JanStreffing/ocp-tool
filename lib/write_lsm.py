@@ -22,13 +22,14 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
     '''
     
     from shutil import copy2
+    #import eccdes
     import gribapi
 
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
     output_file_oifs = output_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT_' + grid_name_oce
     copy2(input_file_oifs, output_file_oifs)
 
-    with open(output_file_oifs, 'r+') as f:
+    with open(output_file_oifs, 'r+b') as f:
         for i in range(num_fields):
             gribapi.grib_set_values(gid[i], gribfield_mod[i])
             gribapi.grib_write(gid[i], f)

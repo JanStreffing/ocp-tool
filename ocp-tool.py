@@ -283,14 +283,14 @@ if __name__ == '__main__':
 
     # Truncation number of desired OpenIFS grid.
     # Choose the one you need e.g. [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    res_num = 255
+    res_num = 159
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'h9wn' #default for linear
+    exp_name_oifs = 'h6mv' #default for linear
     #exp_name_oifs = 'h9wu'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!

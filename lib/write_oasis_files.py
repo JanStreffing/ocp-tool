@@ -37,6 +37,10 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
     
     '''
 
+    import numpy as np
+    from netCDF4 import Dataset
+
+
     for filebase in ['grids', 'areas', 'masks']:
         filename = '%s/%s%s.nc' % (dir_path, output_path_oasis, filebase)
         print('Writing file: %s ' % (filename,))
@@ -123,10 +127,10 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
         rnffile = Dataset(input_file_rnf, 'r')
 
         nc.setncatts(rnffile.__dict__)
-        for name, dimension in rnffile.dimensions.iteritems():
+        for name, dimension in rnffile.dimensions.items():
             nc.createDimension(name, len(dimension) if not dimension.isunlimited() else None)
 
-        for name, variable in rnffile.variables.iteritems():
+        for name, variable in rnffile.variables.items():
             var_out = nc.createVariable(name, variable.datatype, variable.dimensions)
             var_out.setncatts({k: variable.getncattr(k) for k in variable.ncattrs()})
             var_out[:] = variable[:]
