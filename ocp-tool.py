@@ -386,7 +386,7 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
     gid = [None] * num_fields
     gribfield = [None] * num_fields
-    with open(input_file_oifs, 'r') as f:
+    with open(input_file_oifs, 'rb') as f:
         keys = ['N', 'shortName']
 
         for i in range(num_fields):
@@ -617,7 +617,7 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
     output_file_oifs = output_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT_' + grid_name_oce
     copy2(input_file_oifs, output_file_oifs)
 
-    with open(output_file_oifs, 'r+') as f:
+    with open(output_file_oifs, 'r+b') as f:
         for i in range(num_fields):
             gribapi.grib_set_values(gid[i], gribfield_mod[i])
             gribapi.grib_write(gid[i], f)
@@ -786,10 +786,10 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
         rnffile = Dataset(input_file_rnf, 'r')
 
         nc.setncatts(rnffile.__dict__)
-        for name, dimension in rnffile.dimensions.iteritems():
+        for name, dimension in rnffile.dimensions.items():
             nc.createDimension(name, len(dimension) if not dimension.isunlimited() else None)
 
-        for name, variable in rnffile.variables.iteritems():
+        for name, variable in rnffile.variables.items():
             var_out = nc.createVariable(name, variable.datatype, variable.dimensions)
             var_out.setncatts({k: variable.getncattr(k) for k in variable.ncattrs()})
             var_out[:] = variable[:]
@@ -964,7 +964,7 @@ if __name__ == '__main__':
 
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [95]
+    resolution_list = [159]
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'cubic-octahedral'
@@ -972,7 +972,7 @@ if __name__ == '__main__':
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
     #exp_name_oifs = 'h6mv' #default for linear
-    exp_name_oifs = 'hagw'#default for cubic-octahedral
+    exp_name_oifs = 'h9wu'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50
@@ -985,7 +985,7 @@ if __name__ == '__main__':
     # want to remove a basin not yet added (e.g.) for paleo simulations, add
     # the basin in section def modify_lsm and def modify_runoff_map
 
-    grid_name_oce = 'HR'
+    grid_name_oce = 'CORE2'
 
     # There is automatic removal of lakes via the lake file. To remove larger
     # features, e.g. coastal seas for low res or paleo simulations list them
