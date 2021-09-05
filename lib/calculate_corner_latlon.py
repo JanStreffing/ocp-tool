@@ -105,4 +105,8 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
     center_lons = np.where( center_lons > 180, center_lons - 360, center_lons )
     crn_lons    = np.where( crn_lons > 180, crn_lons - 360, crn_lons )
 
+    # Flip corners for right sign
+    #crn_lats = -crn_lats
+    #crn_lons = -crn_lons
+
     return (center_lats, center_lons, crn_lats, crn_lons)

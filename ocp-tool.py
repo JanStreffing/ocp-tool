@@ -47,7 +47,7 @@ from netCDF4 import Dataset
 from shutil import copy2
 from lib import (read_grid_file, extract_grid_data, calculate_corner_latlon, 
                 calculate_area, write_red_point_file, read_lsm, modify_lsm,
-                select_basins, write_lsm,write_oasis_files)
+                select_basins, write_lsm,write_oasis_files, read_oce)
 
 
 #-----------------------------------------------------------------------------
@@ -96,7 +96,8 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
 
 def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
                 grid_name_oce, input_path_oce, num_fields, basin_removal, 
-                coastline_addition, lons_list, center_lats, center_lons):
+                coastline_addition, lons_list, center_lats, center_lons,
+                crn_lats, crn_lons):
     '''
     This function first reads, modifies and finally saves the new land
     sea mask. Every step is mirrored for the soil type file as it has to be
@@ -106,7 +107,9 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
     gribfield, lsm_id, slt_id, cl_id, gid = read_lsm.read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields)
-    lsm_ocean = read_oce.read_oce(grid_name_oce,input_path_oce) 
+    mesh_ocean = read_oce.read_oce(grid_name_oce, input_path_oce, lons_list, center_lats, 
+                                   center_lons, crn_lats, crn_lons) 
+
     lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm.modify_lsm(gribfield, 
                                                            basin_removal, 
                                                            coastline_addition, 
@@ -213,7 +216,7 @@ def plotting_runoff(drainage, arrival, lons, lats):
 
     fig1 = plt.figure(figsize=(12, 8))
     cmap = plt.cm.flag
-    cs = m.pcolor(xi, yi, arrival_cat, cmap=cmap)
+    cs = m.pcolor(xi, yi, arrival_cat, cmap=cmap, shading='auto')
     m.drawcoastlines()
     m.drawparallels(np.arange(-90., 120., 45.))
     m.drawmeridians(np.arange(0., 360., 90.))
@@ -230,13 +233,13 @@ def plotting_runoff(drainage, arrival, lons, lats):
     xi, yi = m(lon, lat)
 
     fig1 = plt.figure(figsize=(12, 8))
-    cs = m.pcolor(xi, yi, drainage_cat, cmap=cmap)
+    cs = m.pcolor(xi, yi, drainage_cat, cmap=cmap, shading='auto')
     m.drawcoastlines()
     m.drawparallels(np.arange(-90., 120., 45.))
     m.drawmeridians(np.arange(0., 360., 90.))
 
     fig1 = plt.figure(figsize=(12, 8))
-    cs = m.pcolor(xi, yi, arrival_cat, cmap=cmap)
+    cs = m.pcolor(xi, yi, arrival_cat, cmap=cmap, shading='auto')
     m.drawcoastlines()
     m.drawparallels(np.arange(-90., 120., 45.))
     m.drawmeridians(np.arange(0., 360., 90.))
@@ -291,8 +294,10 @@ if __name__ == '__main__':
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'h9wu' #default for linear
-    #exp_name_oifs = 'h9wu'#default for cubic-octahedral
+
+    #exp_name_oifs = 'h6mv' #default for linear
+    exp_name_oifs = 'h9wu'#default for cubic-octahedral
+
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50
@@ -346,7 +351,7 @@ if __name__ == '__main__':
     lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, input_path_oce, num_fields,
                                  basin_removal, coastline_addition, lons_list,
-                                 center_lats, center_lons)
+                                 center_lats, center_lons, crn_lats, crn_lons)
 
     write_oasis_files.write_oasis_files(res_num,
                           output_path_oasis, dir_path, grid_name_oce,

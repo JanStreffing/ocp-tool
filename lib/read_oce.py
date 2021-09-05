@@ -1,40 +1,38 @@
-def read_oce():
+def read_oce(grid_name_oce,input_path_oce, lons_list, center_lats, 
+             center_lons, crn_lats, crn_lons):
     '''
     AUTHORS:
     Jan Streffing		2021-09-05	Added ocean mesh reading
 
 
     DESCRIPTION:
-    This function used the pyfesom2 toolbox to read the lon & lat of a fesom2 mesh
+    This function used the pyfesom2 toolbox to read the lon & lat of a fesom2 
+    mesh
     
 
     INPUT:
-    res_num 			        OpenIFS truncation number
-    input_path_reduced_grid	    Path to folder containing reduced Gaussian grid definitition files
-    input_path_full_grid        Path to folder containing full Gaussian grid definitition files
-    truncation_type             OpenIFS truncation type (linear, quadratic, cubic octahedral)
+    grid_name_oce       Name of the ocean model grid or mesh
+    input_path_oce	    Path to folder containing ocean mesh files
 
     
     RETURN:
-    lines			List of unformated lines containing latitudes of grid
-    NN				Name of OpenIFS IO files according to ECMWF naming convention
+    lsm_oce			    ocean land sea mask
     '''
 
-    if truncation_type == 'linear':
-        # linear truncation (T = NN * 2 - 1)
-        print(res_num)
-        print(res_num/2)
-        print(res_num/2 + 0.5)
-        NN = res_num/2 + 0.5
-        grid_txt = '%s/n%d_reduced.txt' % (input_path_reduced_grid, NN)
-    elif truncation_type == 'cubic-octahedral':
-        # cubic octahedral truncation (T = NN - 1)
-        NN = res_num + 1
-        grid_txt = '%s/o%d_reduced.txt' % (input_path_reduced_grid, NN)
-
-    print(' Read grid from file: %s ' % (grid_txt,) )
-    print(' Reading gridfiles for T%d ' % (res_num))
-
-    fin = open(grid_txt, 'r')
-    lines = fin.readlines()
-    return (lines, NN)
+    import pyfesom2 as pf
+    import numpy as np
+    
+    def sorting(l1, l2):
+        # l1 and l2 has to be numpy arrays
+        idx = np.argsort(l1)
+        return l1[idx], l2[idx]
+    
+    mesh_ocean = pf.load_mesh(input_path_oce+'/'+grid_name_oce)
+    
+    x3, y3 = sorting(mesh_ocean.x2, mesh_ocean.y2)
+    lons_list_uni = np.unique(lons_list)
+    
+    for idx in range(len(lons_list_uni)):
+        condition1 = x3>crn_lons[0,0,idx] and x3<crn_lons[2,0,idx]
+        
+    return(mesh_ocean)
