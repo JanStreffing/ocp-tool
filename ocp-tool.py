@@ -95,7 +95,7 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
 
 
 def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
-                grid_name_oce, num_fields, basin_removal, 
+                grid_name_oce, input_path_oce, num_fields, basin_removal, 
                 coastline_addition, lons_list, center_lats, center_lons):
     '''
     This function first reads, modifies and finally saves the new land
@@ -106,6 +106,7 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs,
     gribfield, lsm_id, slt_id, cl_id, gid = read_lsm.read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields)
+    lsm_ocean = read_oce.read_oce(grid_name_oce,input_path_oce) 
     lsm_binary_a, lsm_binary_l, gribfield_mod = modify_lsm.modify_lsm(gribfield, 
                                                            basin_removal, 
                                                            coastline_addition, 
@@ -286,11 +287,11 @@ if __name__ == '__main__':
     res_num = 159
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'linear'
+    truncation_type = 'cubic-octahedral'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'h6mv' #default for linear
+    exp_name_oifs = 'h9wu' #default for linear
     #exp_name_oifs = 'h9wu'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
@@ -328,6 +329,7 @@ if __name__ == '__main__':
         sys.exit('truncation type not recognized')
     input_path_full_grid = 'input/gaussian_grids_full/'
     input_path_oifs = 'input/openifs_input_default/'
+    input_path_oce = 'input/ocean_input_default/'
     input_path_runoff = 'input/runoff_map_default/'
     output_path_oifs = 'output/openifs_input_modified/'
     output_path_runoff = 'output/runoff_map_modified/'
@@ -342,7 +344,7 @@ if __name__ == '__main__':
                                  truncation_type)
 
     lsm_binary_a,lsm_binary_l = process_lsm(res_num, input_path_oifs, output_path_oifs,
-                                 exp_name_oifs, grid_name_oce, num_fields,
+                                 exp_name_oifs, grid_name_oce, input_path_oce, num_fields,
                                  basin_removal, coastline_addition, lons_list,
                                  center_lats, center_lons)
 

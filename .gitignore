@@ -1,8 +1,6 @@
 output/
 *~lock*
 *ICMGG*
-<<<<<<< HEAD
 *pyc
-=======
 *.pyc
->>>>>>> master
+input/ocean_input_default/

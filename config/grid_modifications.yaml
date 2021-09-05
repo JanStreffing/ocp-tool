@@ -40,6 +40,14 @@ add:
       - princess-martha-coast-east
       - princess-martha-coast-center
       - princess-martha-coast-west
+    cubic-octahedral-95:
+      - tanquary-fiord
+      - spencer-golf
+      - ingrid-christensen-coast
+      - jennings-promontory
+      - princess-martha-coast-east
+      - princess-martha-coast-center
+      - princess-martha-coast-west
     linear-159:
       - coronation-queen-maude
       - saint-lawrence
