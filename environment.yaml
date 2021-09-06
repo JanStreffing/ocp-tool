@@ -10,3 +10,4 @@ dependencies:
   - pyyaml
   - pyfesom2
   - python-eccodes
+  - tqdm
