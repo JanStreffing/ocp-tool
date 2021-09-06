@@ -283,19 +283,19 @@ def calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list,
         for jj in range(ni):
             # corner 1: north-east
             crn_lons[0, 0, kk] = lons[jj] + dlon/2.
-            crn_lats[0, 0, kk] = lat + dlat_n/2.
+            crn_lats[0, 0, kk] = lat + dlat_n
 
             # corner 2: north-west
             crn_lons[1, 0, kk] = lons[jj] - dlon/2.
-            crn_lats[1, 0, kk] = lat + dlat_n/2.
+            crn_lats[1, 0, kk] = lat + dlat_n
 
             # corner 3: south-west
             crn_lons[2, 0, kk] = lons[jj] - dlon/2.
-            crn_lats[2, 0, kk] = lat - dlat_s/2.
+            crn_lats[2, 0, kk] = lat - dlat_s
 
             # corner 4: south-east
             crn_lons[3, 0, kk] = lons[jj] + dlon/2.
-            crn_lats[3, 0, kk] = lat - dlat_s/2.
+            crn_lats[3, 0, kk] = lat - dlat_s
 
             kk += 1
 
@@ -385,7 +385,7 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
     gid = [None] * num_fields
     gribfield = [None] * num_fields
-    with open(input_file_oifs, 'r') as f:
+    with open(input_file_oifs, 'rb') as f:
         keys = ['N', 'shortName']
 
         for i in range(num_fields):
@@ -628,7 +628,7 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
     output_file_oifs = output_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT_' + grid_name_oce
     copy2(input_file_oifs, output_file_oifs)
 
-    with open(output_file_oifs, 'r+') as f:
+    with open(output_file_oifs, 'r+b') as f:
         for i in range(num_fields):
             gribapi.grib_set_values(gid[i], gribfield_mod[i])
             gribapi.grib_write(gid[i], f)
@@ -797,10 +797,10 @@ def write_oasis_files(res_num, output_path_oasis, dir_path, grid_name_oce, cente
         rnffile = Dataset(input_file_rnf, 'r')
 
         nc.setncatts(rnffile.__dict__)
-        for name, dimension in rnffile.dimensions.iteritems():
+        for name, dimension in rnffile.dimensions.items():
             nc.createDimension(name, len(dimension) if not dimension.isunlimited() else None)
 
-        for name, variable in rnffile.variables.iteritems():
+        for name, variable in rnffile.variables.items():
             var_out = nc.createVariable(name, variable.datatype, variable.dimensions)
             var_out.setncatts({k: variable.getncattr(k) for k in variable.ncattrs()})
             var_out[:] = variable[:]
