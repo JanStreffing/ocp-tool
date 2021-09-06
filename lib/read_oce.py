@@ -31,8 +31,6 @@ def read_oce(grid_name_oce,input_path_oce, lons_list, center_lats, center_lons, 
 
 
 
-
-
     import pyfesom2 as pf
     import numpy as np
     from tqdm import tqdm
