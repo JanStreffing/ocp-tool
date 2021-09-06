@@ -438,8 +438,9 @@ def autoselect_coastline(grid_name_oce, truncation_type, res_num):
     '''
     
     if grid_name_oce == 'core2' and truncation_type == 'cubic-octahedral' and res_num == 159:
-        return ['tanquary-fiord', 'spencer-golf', 'ingrid-christensen-coast', 
-                'jennings-promontory', 'princess-martha-coast-east', 
+        return ['tanquary-fiord', 'baffin-bay', 'banks-island', 'spencer-golf', 
+                'qaanaaq-fjord', 'ingrid-christensen-coast', 'jennings-promontory', 
+                'princess-martha-coast-east', 'coronation-bay', 
                 'princess-martha-coast-center', 'princess-martha-coast-west']
     else:
         return []
@@ -560,14 +561,62 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
             
             if coastline == 'tanquary-fiord':
                 for ia in range(len(lons_list)):
-                   if center_lats[0, ia] > 79.5 and center_lats[0, ia] < 81.5 and center_lons[0, ia] > -102 and center_lons[0, ia] < -98:
+                   if center_lats[0, ia] > 79.5 and center_lats[0, ia] < 81.5 and center_lons[0, ia] > -92 and center_lons[0, ia] < -88:
+                      print('tanquary-fiord lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+                   if center_lats[0, ia] > 79.5 and center_lats[0, ia] < 80.5 and center_lons[0, ia] > -88 and center_lons[0, ia] < -78:
+                      print('tanquary-fiord lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+                   if center_lats[0, ia] > 77 and center_lats[0, ia] < 77.5 and center_lons[0, ia] > -84 and center_lons[0, ia] < -82:
                       print('tanquary-fiord lat, lon:',center_lats[0, ia], center_lons[0, ia])
                       gribfield_mod[lsm_id][ia] = 0
                       gribfield_mod[slt_id][ia] = 0
     
+            if coastline == 'baffin-bay':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 71 and center_lats[0, ia] < 73.5 and center_lons[0, ia] > -86 and center_lons[0, ia] < -83:
+                      print('baffin-bay lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+
+            if coastline == 'coronation-bay':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 67.5 and center_lats[0, ia] < 68 and center_lons[0, ia] > -115.3 and center_lons[0, ia] < -114:
+                      print('coronation-bay lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+
+            if coastline == 'banks-island':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 72.5 and center_lats[0, ia] < 73.3 and center_lons[0, ia] > -117 and center_lons[0, ia] < -114:
+                      print('banks-island lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+                   if center_lats[0, ia] > 72 and center_lats[0, ia] < 73 and center_lons[0, ia] > -118 and center_lons[0, ia] < -117:
+                      print('banks-island lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+                   if center_lats[0, ia] > 71 and center_lats[0, ia] < 72 and center_lons[0, ia] > -119.5 and center_lons[0, ia] < -118:
+                      print('banks-island lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+
+            if coastline == 'qaanaaq-fjord':
+                for ia in range(len(lons_list)):
+                   if center_lats[0, ia] > 77.1 and center_lats[0, ia] < 77.3 and center_lons[0, ia] > -71 and center_lons[0, ia] < -66.5:
+                      print('qaanaaq-fjord lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+
             if coastline == 'spencer-golf':
                 for ia in range(len(lons_list)):
-                   if center_lats[0, ia] > -35 and center_lats[0, ia] < -34 and center_lons[0, ia] > 137 and center_lons[0, ia] < 137.5:
+                   if center_lats[0, ia] > -35 and center_lats[0, ia] < -34 and center_lons[0, ia] > 136 and center_lons[0, ia] < 137:
+                      print('spencer-golf lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0
+                   if center_lats[0, ia] > -34 and center_lats[0, ia] < -33 and center_lons[0, ia] > 137.2 and center_lons[0, ia] < 138:
                       print('spencer-golf lat, lon:',center_lats[0, ia], center_lons[0, ia])
                       gribfield_mod[lsm_id][ia] = 0
                       gribfield_mod[slt_id][ia] = 0
@@ -588,7 +637,11 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
                       
             if coastline == 'princess-martha-coast-east':
                 for ia in range(len(lons_list)):
-                   if center_lats[0, ia] > -71.5 and center_lats[0, ia] < -68 and center_lons[0, ia] > 25 and center_lons[0, ia] < 27:
+                   if center_lats[0, ia] > -71 and center_lats[0, ia] < -68 and center_lons[0, ia] > 25 and center_lons[0, ia] < 28:
+                      print('princess-martha-coast-east lat, lon:',center_lats[0, ia], center_lons[0, ia])
+                      gribfield_mod[lsm_id][ia] = 0
+                      gribfield_mod[slt_id][ia] = 0   
+                   if center_lats[0, ia] > -70.4 and center_lats[0, ia] < -68 and center_lons[0, ia] > 28 and center_lons[0, ia] < 32.5:
                       print('princess-martha-coast-east lat, lon:',center_lats[0, ia], center_lons[0, ia])
                       gribfield_mod[lsm_id][ia] = 0
                       gribfield_mod[slt_id][ia] = 0   
