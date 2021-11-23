@@ -706,13 +706,13 @@ def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons):
     fig3.savefig(figname, format='png')
 
 
-def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type):
+def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type, exp_name_oifs="hagw"):
     '''
     This function generates coordinate and areas fields based on
     the full and reduced gaussian gridfiles for a given truncation number.
     '''
 
-    lines, NN = read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type)
+    lines, NN = read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, truncation_type, exp_name_oifs=exp_name_oifs)
     lons_list, lats_list, numlons_list, dlon_list, lat_list = extract_grid_data(lines)
     center_lats, center_lons, crn_lats, crn_lons = calculate_corner_latlon(lats_list, lons_list, numlons_list, dlon_list, lat_list)
     gridcell_area = calculate_area(center_lons, numlons_list, dlon_list, lat_list)
@@ -1069,7 +1069,7 @@ if __name__ == '__main__':
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
     #exp_name_oifs = 'h6mv' #default for linear
-    exp_name_oifs = 'h9wu'#default for cubic-octahedral
+    exp_name_oifs = 'hagw' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50
@@ -1128,7 +1128,7 @@ if __name__ == '__main__':
         gridcell_area, lons_list, \
         NN = generate_coord_area(res_num,
                                  input_path_reduced_grid, input_path_full_grid,
-                                 truncation_type)
+                                 truncation_type,exp_name_oifs=exp_name_oifs)
 
         lsm_binary_a,lsm_binary_l,lsm_binary_r = process_lsm(res_num, input_path_oifs, output_path_oifs,
                                  exp_name_oifs, grid_name_oce, num_fields,
