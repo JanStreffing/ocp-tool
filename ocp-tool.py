@@ -925,20 +925,56 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                         if lat > 38.5 and lat < 41:
                             if arrival[la, lo] != -1:
                                 arrival[la, lo] = 28
-        # Fix for Ob arrival
-            for lo, lon in enumerate(lons):
-                #removing old arrival points
-                if lon > 60 and lon < 70:
-                    for la, lat in enumerate(lats):
-                        if lat > 60 and lat < 80:
-                            if arrival[la, lo] == 13:
-                                arrival[la, lo] = 6
-                # adding new arrival points
-                if lon > 72 and lon < 75:
-                    for la, lat in enumerate(lats):
-                        if lat > 65 and lat < 75:
-                            if arrival[la, lo] == 6:
-                                arrival[la, lo] = 13
+
+    # Fix for Ob arrival
+    for lo, lon in enumerate(lons):
+        #removing old arrival points
+        if lon > 60 and lon < 70:
+            for la, lat in enumerate(lats):
+                if lat > 60 and lat < 80:
+                    if arrival[la, lo] == 13:
+                        arrival[la, lo] = 6
+        # adding new arrival points
+        if lon > 72 and lon < 75:
+            for la, lat in enumerate(lats):
+                if lat > 65 and lat < 75:
+                    if arrival[la, lo] == 6:
+                        arrival[la, lo] = 13
+
+    # Fix for Glacial calving maps
+    # Antarctica
+    for lo, lon in enumerate(lons):
+        #removing old arrival points
+        for la, lat in enumerate(lats):
+            if lat < -55:
+                if arrival[la, lo] == 66:
+                    arrival[la, lo] = -2
+
+    for lo, lon in enumerate(lons):
+        # adding new arrival points
+        if lon > 300 and lon < 320:
+            for la, lat in enumerate(lats):
+                if lat > -70 and lat < -60:
+                    if arrival[la, lo] == -2:
+                        arrival[la, lo] = 66
+        if lon > 320 and lon < 360:
+            for la, lat in enumerate(lats):
+                if lat > -60 and lat < -50:
+                    if arrival[la, lo] == -2:
+                        arrival[la, lo] = 66
+        if lon > 170 and lon < 180:
+            for la, lat in enumerate(lats):
+                if lat > -75 and lat < -65:
+                    if arrival[la, lo] == -2:
+                        arrival[la, lo] = 66
+    # Greenland
+    for lo, lon in enumerate(lons):
+        # adding new arrival points
+        if lon > 300 and lon < 310:
+            for la, lat in enumerate(lats):
+                if lat > 50 and lat < 60:
+                    if arrival[la, lo] == -2:
+                        arrival[la, lo] = 1
 
     # Saving results
     rnffile.variables[u'drainage_basin_id'][:] = drainage
@@ -1061,7 +1097,7 @@ if __name__ == '__main__':
 
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [159]
+    resolution_list = [95]
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'cubic-octahedral'
@@ -1069,7 +1105,7 @@ if __name__ == '__main__':
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
     #exp_name_oifs = 'h6mv' #default for linear
-    exp_name_oifs = 'hagw' #default for cubic-octahedral
+    exp_name_oifs = 'aack'#default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 50
@@ -1082,7 +1118,7 @@ if __name__ == '__main__':
     # want to remove a basin not yet added (e.g.) for paleo simulations, add
     # the basin in section def modify_lsm and def modify_runoff_map
 
-    grid_name_oce = 'core2'
+    grid_name_oce = 'CORE2'
 
     # There is automatic removal of lakes via the lake file. To remove larger
     # features, e.g. coastal seas for low res or paleo simulations list them
