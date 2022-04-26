@@ -220,7 +220,7 @@ else:
             else:
                 ocpt.oasis.write_mask(
                     name=oasis_grid_names['rnfm-atm'],
-                    masks=np.zeros((rnfm_grid.nlons, rnfm_grid.nlats))
+                    masks=np.zeros((rnfm_grid.nlats, rnfm_grid.nlons))
                 )
 
             # AMIP Forcing-reader grid
