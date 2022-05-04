@@ -419,9 +419,9 @@ def autoselect_basins(grid_name_oce):
     OpenIFS land sea mask based on a given ocean grid names.
     '''
 
-    if grid_name_oce == 'core2':
+    if grid_name_oce == 'CORE2':
         return ['caspian-sea', 'black-sea', 'white-sea', 'gulf-of-ob',
-                'persian-gulf' ] #, 'coronation-queen-maude']
+                'persian-gulf'] #, 'coronation-queen-maude']
     elif (grid_name_oce == 'mr') or (grid_name_oce == 'hr') or (grid_name_oce == 'D3'):
         return ['caspian-sea']
     elif (grid_name_oce == 'ORCA05'):
@@ -437,7 +437,7 @@ def autoselect_coastline(grid_name_oce, truncation_type, res_num):
     ocean grid name and atmospheric resolution.
     '''
     
-    if grid_name_oce == 'core2' and truncation_type == 'cubic-octahedral' and res_num == 159:
+    if grid_name_oce == 'CORE2' and truncation_type == 'cubic-octahedral' and res_num == 159:
         return ['tanquary-fiord', 'baffin-bay', 'banks-island', 'spencer-golf', 
                 'qaanaaq-fjord', 'ingrid-christensen-coast', 'jennings-promontory', 
                 'princess-martha-coast-east', 'coronation-bay', 
@@ -461,11 +461,10 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
     lsm_binary_r = lsm_binary_l.copy()
 
     # Automatic lake removal with lakes mask
-    gribfield_mod = gribfield[:]
+    gribfield_mod = copy.deepcopy(gribfield[:])
     # Soil class of removed lakes is set to SANDY CLAY LOAM
     for i in np.arange (0, len(gribfield_mod[slt_id])-1):
         if gribfield_mod[cl_id][i] >= 0.5:
-            gribfield_mod[slt_id][i] = 6
             gribfield_mod[lsm_id][i] = 1
 
     print('Removing: ', manual_basin_removal)
@@ -475,15 +474,13 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
             for ia in range(len(lons_list)):
                if center_lats[0, ia] > 36 and center_lats[0, ia] < 47 and center_lons[0, ia] > 46 and center_lons[0, ia] < 56:
                   if gribfield_mod[slt_id][ia] == 0:
-                     gribfield_mod[slt_id][ia] = 6
-                     gribfield_mod[lsm_id][ia] = 1
+                     #gribfield_mod[lsm_id][ia] = 1
                      gribfield_mod[cl_id][ia] = 1
 
         if basin == 'black-sea':
             for ia in range(len(lons_list)):
                if center_lats[0, ia] > 40.5 and center_lats[0, ia] < 48 and center_lons[0, ia] > 27 and center_lons[0, ia] < 43:
                   if gribfield_mod[slt_id][ia] == 0:
-                     gribfield_mod[slt_id][ia] = 6
                      gribfield_mod[lsm_id][ia] = 1
                      gribfield_mod[cl_id][ia] = 1
 
@@ -491,7 +488,6 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
             for ia in range(len(lons_list)):
                if center_lats[0, ia] > 63 and center_lats[0, ia] < 67 and center_lons[0, ia] > 31 and center_lons[0, ia] < 41:
                   if gribfield_mod[slt_id][ia] == 0:
-                     gribfield_mod[slt_id][ia] = 6
                      gribfield_mod[lsm_id][ia] = 1
                      gribfield_mod[cl_id][ia] = 1
 
@@ -500,7 +496,6 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
                if center_lats[0, ia] > 65 and center_lats[0, ia] < 71 and center_lons[0, ia] > 70 and center_lons[0, ia] < 79:
                   print('gulf-of-ob lat, lon:',center_lats[0, ia], center_lons[0, ia])
                   if gribfield_mod[slt_id][ia] == 0:
-                     gribfield_mod[slt_id][ia] = 6
                      gribfield_mod[lsm_id][ia] = 1
                      gribfield_mod[cl_id][ia] = 1
 
@@ -508,7 +503,6 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
             for ia in range(len(lons_list)):
                if center_lats[0, ia] > 21 and center_lats[0, ia] < 31 and center_lons[0, ia] > 46 and center_lons[0, ia] < 59:
                   if gribfield_mod[slt_id][ia] == 0:
-                     gribfield_mod[slt_id][ia] = 6
                      gribfield_mod[lsm_id][ia] = 1
                      gribfield_mod[cl_id][ia] = 1
 
@@ -517,7 +511,6 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
                if center_lats[0, ia] > 48 and center_lats[0, ia] < 55 and center_lons[0, ia] > -102 and center_lons[0, ia] < -94:
                   print('coronation-queen-maude lat, lon:',center_lats[0, ia], center_lons[0, ia])
                   if gribfield_mod[slt_id][ia] == 0:
-                     gribfield_mod[slt_id][ia] = 6
                      gribfield_mod[lsm_id][ia] = 1
                      gribfield_mod[cl_id][ia] = 1
         
@@ -664,6 +657,7 @@ def modify_lsm(gribfield, manual_basin_removal, manual_coastline_addition,
 
     # Mask with lakes counting as land in correct format for oasis3-mct file
     lsm_binary_a = gribfield_mod[lsm_id]
+    gribfield_mod[lsm_id] = gribfield[lsm_id]
     lsm_binary_a = lsm_binary_a[np.newaxis, :]
 
     return (lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
@@ -1111,7 +1105,7 @@ if __name__ == '__main__':
     num_fields = 50
 
     # Name of ocean model grid. So far supported are:
-    # FESOM2: core2, mr, hr;  NEMO:
+    # FESOM2: CORE2, mr, hr;  NEMO:
     # Important: If you chose a supported ocean grid, manual removal of basins
     # for that grid will be applied. If you chose an unknown grid and wish to
     # do manual basin removal, list them in manual_basin_removal below. If you
