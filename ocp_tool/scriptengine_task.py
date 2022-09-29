@@ -72,12 +72,13 @@ else:
             #           x - extremely high resolution (ORCA036)
 
             oasis_grid_names = {
-                "TCO199": "ICH",  # 2nd character to be inserted later
+                "TCO319": "ICh",  # 2nd character to be inserted later
+                "TCO199": "ICH",
                 "TCO159": "ICM",
                 "TL255": "ILM",
                 "TCO95": "ICL",
                 "TL159": "ILL",
-                "TQ21": "IQx",
+                "TQ21": "IQl",
                 "ORCA1L75t": "NOTM",
                 "ORCA1L75u": "NOUM",
                 "ORCA1L75v": "NOVM",

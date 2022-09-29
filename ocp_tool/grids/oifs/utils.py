@@ -1,6 +1,5 @@
-import re
 import configparser
-
+import re
 from collections import namedtuple
 
 
@@ -43,10 +42,10 @@ def parse_griddes(griddes_string):
     cfg = configparser.ConfigParser()
     cfg.read_string(
         re.sub(
-            r'#\s*\n#\s+(.*)\n#\s*\n',  # Matches the cdo griddes headers
-            r'[\1]\n',             # and replaces by configparser headers
+            r"#\s*\n#\s+(.*)\n#\s*\n",  # Matches the cdo griddes headers
+            r"[\1]\n",  # and replaces by configparser headers
             griddes_string,
-            re.MULTILINE
+            re.MULTILINE,
         )
     )
 
