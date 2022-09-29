@@ -84,36 +84,28 @@ class ORCA:
         if not _valid_subgrid(subgrid):
             raise ValueError(f"Invalid NEMO subgrid: {subgrid}")
 
-        def mask_borders(mask):
-            mask[-1, :] = 1  # mask north-fold line
-            mask[:, (0, -1)] = 1  # mask east+west borders
-
         # If a NEMO mask file is provided, just read T, U, V masks
         if self.masks is not None:
             with Dataset(self.masks) as nc:
                 mask = np.where(
                     nc.variables[f"{subgrid}maskutil"][0, ...].data > 0, 0, 1
                 )
-                mask_borders(mask)
                 return mask
 
         # Without a NEMO mask file, compute masks from top_level in domain_cfg
         with Dataset(self.domain_cfg) as nc:
             tmask = np.where(nc.variables["top_level"][0, ...].data == 0, 1, 0)
             if subgrid == "t":
-                mask_borders(tmask)
                 return tmask
             elif subgrid == "u":
                 umask = tmask * tmask.take(
                     range(1, tmask.shape[1] + 1), axis=1, mode="wrap"
                 )
-                mask_borders(umask)
                 return umask
             elif subgrid == "v":
                 vmask = tmask * tmask.take(
                     range(1, tmask.shape[0] + 1), axis=0, mode="clip"
                 )
-                mask_borders(vmask)
                 return vmask
 
     def cell_corners(self, subgrid="t"):
