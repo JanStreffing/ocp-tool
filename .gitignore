@@ -4,6 +4,7 @@ output/
 griddes.txt 
 *.pyc
 
+
 # Python virtualenv
 .ocpt.
 .activate
@@ -13,3 +14,4 @@ griddes.txt
 
 # VSCode
 .vscode
+input/ocean_input_default/
