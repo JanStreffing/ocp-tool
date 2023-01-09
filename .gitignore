@@ -3,4 +3,15 @@ output/
 *ICMGG*
 griddes.txt 
 *.pyc
+
+
+# Python virtualenv
+.ocpt.
+.activate
+
+# Python setuptools etc
+*.egg-info
+
+# VSCode
+.vscode
 input/ocean_input_default/
