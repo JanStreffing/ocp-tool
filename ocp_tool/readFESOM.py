@@ -224,10 +224,10 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         lon_orig, lat_orig, coast = data[:, 1], data[:, 2], data[:, 3]
         return N, lon_orig, lat_orig, coast
 
-    def findneighbours(elem, maxmaxneigh=12, reverse=True, verbose=False, max_iter=10):
+    def findneighbours(elem, maxmaxneigh=12, reverse=True, verbose=True, max_iter=10):
         if np.any(np.isnan(elem)):
             raise ValueError("'elem' must not contain NaNs.")
-        
+
         N = np.max(elem)
         Ne = elem.shape[0]
         neighmat = np.full((N + 1, maxmaxneigh), np.nan)
@@ -237,7 +237,7 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         iekdone = np.full((Ne, 3), False)
         niter = 0
         completed = True
-        
+
         while np.sum(iekdone) < Ne * 3:
             niter += 1
             if niter > max_iter:
@@ -247,16 +247,17 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
 
             if verbose:
                 print(f"Starting iteration {niter}...")
-            
+
             for ie in range(Ne):
                 if np.all(iekdone[ie, :]):
                     continue
-                
+
                 for k in range(3):
                     if iekdone[ie, k]:
                         continue
 
                     i = elem[ie, k]
+
                     if iscomplete[i]:
                         raise ValueError("Ups! Trying to add neighbors to a node labeled complete!")
 
@@ -274,8 +275,8 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                         found2 = np.any(neighmat[i, :Nneigh[i]] == neigh2)
 
                         if found1 and found2:
-                            if verbose:
-                                print("Found both, node complete.")
+                            #if verbose:
+                            #    print("Found both, node complete.")
                             barmat[i, Nneigh[i]] = ie
                             iscomplete[i] = True
                             iekdone[ie, k] = True
@@ -284,43 +285,44 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                                 raise ValueError("Ups! maxmaxneigh is insufficient!")
 
                             if found1:
-                                if verbose:
-                                    print("Found 1.")
+                                #if verbose:
+                                #    print("Found 1.")
                                 neighmat[i, Nneigh[i]] = neigh2
                                 barmat[i, Nneigh[i]] = ie
                                 Nneigh[i] += 1
                                 iekdone[ie, k] = True
+
                             elif found2:
-                                if verbose:
-                                    print("Found 2.")
+                                #if verbose:
+                                #    print("Found 2.")
                                 neighmat[i, 1:Nneigh[i] + 1] = neighmat[i, :Nneigh[i]]
                                 neighmat[i, 0] = neigh1
                                 barmat[i, 1:Nneigh[i] + 1] = barmat[i, :Nneigh[i]]
                                 barmat[i, 0] = ie
                                 Nneigh[i] += 1
                                 iekdone[ie, k] = True
-                            else:
-                                if verbose:
-                                    print("Found none, retry element in next iteration.")
+                            #else:
+                            #    if verbose:
+                            #        print("Found none, retry element in next iteration.")
 
-        maxneigh = np.max(Nneigh)
+        maxneigh = max(Nneigh)
         neighmat = neighmat[:, :maxneigh]
         barmat = barmat[:, :maxneigh]
 
         if reverse:
-            if verbose:
-                print("Reversing order of neighbours.")
-            for i in range(1, N + 1):
+            print("Reversing order of neighbors.")
+            for i in range(N):
                 if Nneigh[i] > 1:
-                    neighmat[i, 0:Nneigh[i]] = neighmat[i, Nneigh[i] - 1::-1]
-                    barmat[i, 0:Nneigh[i] - 1] = barmat[i, Nneigh[i] - 2::-1]
+                    neighmat[i, :Nneigh[i]] = neighmat[i, Nneigh[i]-1::-1]
+                    barmat[i, :Nneigh[i]-1] = barmat[i, Nneigh[i]-2::-1]
 
-        if completed:
-            elems_completed = None
-        else:
-            elems_completed = iekdone
+        # Calculate the average number of neighbors
+        avg_num_neighbors = np.mean(Nneigh)
 
-        return neighmat, barmat, Nneigh, iscomplete, completed, elems_completed
+        # Determine internal nodes (nodes with at least one neighbor)
+        internal_nodes = Nneigh > 0
+
+        return neighmat, barmat, Nneigh, internal_nodes, iscomplete, avg_num_neighbors
 
 
 
@@ -454,7 +456,8 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         }
     if verbose:
         print("searching all neighbors of each node based on the triangular elements ...")
-    neighnodes, neighelems, Nneighs, internal_nodes, elems_completed, all_elements_arranged = find_neighbors(elem, maxmaxneigh, reverse=False, max_iter=findneighbours_maxiter)
+    neighnodes, neighelems, Nneighs, internal_nodes, elems_completed, all_elements_arranged = findneighbours(elem, maxmaxneigh, reverse=False, max_iter=findneighbours_maxiter)
+    print(np.shape(coast),np.shape(internal_nodes))
     if np.any(coast == internal_nodes):
         warnings.warn("coast information from nod2d.out seems to be corrupt, using diagnosed coast flag instead.")
         coast = ~internal_nodes
@@ -555,4 +558,5 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         'depth': depth, 'depth_bounds': depth_bounds, 'depth_lev': depth_lev, 'boundary': boundary, 'elemdepth_lev': elemdepth_lev
     }
 
-read_fesom_grid(griddir='/work/ab0246/a270092/input/fesom2/core2/', basicreadonly=True)
+out = read_fesom_grid(griddir='/work/ab0246/a270092/input/fesom2/core2/', basicreadonly=False)
+print(out)
