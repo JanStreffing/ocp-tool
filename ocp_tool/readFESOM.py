@@ -1,12 +1,13 @@
 import numpy as np
 import os
 import warnings
+import sys
+np.set_printoptions(threshold=sys.maxsize)
 
 def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=True, remove_empty_lev=False, read_boundary=True,
                     reorder_ccw=True, maxmaxneigh=12, findneighbours_maxiter=10, repeatlastpoint=True, onlybaryc=False,
                     omitcoastnds=False, calcpolyareas=True, Rearth=6371000, basicreadonly=False, fesom2=True, verbose=True):
     
-
 
     def barycenter(lon=None, lat=None, x=None, y=None, z=None, weights=None, rm_na=True):
         rad = np.pi / 180
@@ -14,14 +15,14 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         if lon is None:
             if x is None or y is None or z is None:
                 raise ValueError("Please provide lon, lat, and optionally weights.")
-            
+
             if rm_na:
                 if weights is None:
                     inds = ~np.isnan(x) & ~np.isnan(y) & ~np.isnan(z)
-                    x, y, z = x[inds], y[inds], z[inds]
+                    x, y, z = np.array(x)[inds], np.array(y)[inds], np.array(z)[inds]
                 else:
                     inds = ~np.isnan(x) & ~np.isnan(y) & ~np.isnan(z) & ~np.isnan(weights)
-                    x, y, z, weights = x[inds], y[inds], z[inds], weights[inds]
+                    x, y, z, weights = np.array(x)[inds], np.array(y)[inds], np.array(z)[inds], np.array(weights)[inds]
 
             lon = np.arctan2(y, x) * 180 / np.pi
             lat = np.arcsin(z) * 180 / np.pi
@@ -29,17 +30,17 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         else:
             if lat is None:
                 raise ValueError("Please provide lon and lat.")
-            
+
             if rm_na:
                 if weights is None:
                     inds = ~np.isnan(lon) & ~np.isnan(lat)
-                    lon, lat = lon[inds], lat[inds]
+                    lon, lat = np.array(lon)[inds], np.array(lat)[inds]
                 else:
                     inds = ~np.isnan(lon) & ~np.isnan(lat) & ~np.isnan(weights)
-                    lon, lat, weights = lon[inds], lat[inds], weights[inds]
+                    lon, lat, weights = np.array(lon)[inds], np.array(lat)[inds], np.array(weights)[inds]
 
-            lon = lon * rad
-            lat = lat * rad
+            lon = np.array(lon) * rad
+            lat = np.array(lat) * rad
             x = np.cos(lat) * np.cos(lon)
             y = np.cos(lat) * np.sin(lon)
             z = np.sin(lat)
@@ -62,6 +63,7 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         lat_result = np.arcsin(z_mean) * 180 / np.pi
 
         return lon_result, lat_result
+
 
 
     def checkposition(a, b, c, ccw_defined_as=1):
@@ -224,16 +226,17 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         lon_orig, lat_orig, coast = data[:, 1], data[:, 2], data[:, 3]
         return N, lon_orig, lat_orig, coast
 
-    def findneighbours(elem, maxmaxneigh=12, reverse=True, verbose=True, max_iter=10):
+
+    def find_neighbors(elem, maxmaxneigh=12, reverse=True, verbose=False, max_iter=10):
         if np.any(np.isnan(elem)):
             raise ValueError("'elem' must not contain NaNs.")
 
         N = np.max(elem)
         Ne = elem.shape[0]
-        neighmat = np.full((N + 1, maxmaxneigh), np.nan)
-        Nneigh = np.zeros(N + 1, dtype=int)
-        barmat = np.full((N + 1, maxmaxneigh), np.nan)
-        iscomplete = np.full(N + 1, False)
+        neighmat = np.full((N, maxmaxneigh), np.nan)
+        Nneigh = np.zeros(N, dtype=int)
+        barmat = np.full((N, maxmaxneigh), np.nan)
+        iscomplete = np.full(N, False)
         iekdone = np.full((Ne, 3), False)
         niter = 0
         completed = True
@@ -256,7 +259,7 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                     if iekdone[ie, k]:
                         continue
 
-                    i = elem[ie, k]
+                    i = elem[ie, k]-1
 
                     if iscomplete[i]:
                         raise ValueError("Ups! Trying to add neighbors to a node labeled complete!")
@@ -275,8 +278,8 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                         found2 = np.any(neighmat[i, :Nneigh[i]] == neigh2)
 
                         if found1 and found2:
-                            #if verbose:
-                            #    print("Found both, node complete.")
+                            if verbose:
+                                print("Found both, node complete.")
                             barmat[i, Nneigh[i]] = ie
                             iscomplete[i] = True
                             iekdone[ie, k] = True
@@ -285,46 +288,41 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                                 raise ValueError("Ups! maxmaxneigh is insufficient!")
 
                             if found1:
-                                #if verbose:
-                                #    print("Found 1.")
+                                if verbose:
+                                    print("Found 1.")
                                 neighmat[i, Nneigh[i]] = neigh2
                                 barmat[i, Nneigh[i]] = ie
                                 Nneigh[i] += 1
                                 iekdone[ie, k] = True
 
                             elif found2:
-                                #if verbose:
-                                #    print("Found 2.")
+                                if verbose:
+                                    print("Found 2.")
                                 neighmat[i, 1:Nneigh[i] + 1] = neighmat[i, :Nneigh[i]]
                                 neighmat[i, 0] = neigh1
                                 barmat[i, 1:Nneigh[i] + 1] = barmat[i, :Nneigh[i]]
                                 barmat[i, 0] = ie
                                 Nneigh[i] += 1
                                 iekdone[ie, k] = True
-                            #else:
-                            #    if verbose:
-                            #        print("Found none, retry element in next iteration.")
+                            else:
+                                if verbose:
+                                    print("Found none, retry element in next iteration.")
 
         maxneigh = max(Nneigh)
         neighmat = neighmat[:, :maxneigh]
         barmat = barmat[:, :maxneigh]
 
         if reverse:
-            print("Reversing order of neighbors.")
+            print("Reversing order of neighbors")
             for i in range(N):
                 if Nneigh[i] > 1:
-                    neighmat[i, :Nneigh[i]] = neighmat[i, Nneigh[i]-1::-1]
-                    barmat[i, :Nneigh[i]-1] = barmat[i, Nneigh[i]-2::-1]
+                    neighmat[i, :Nneigh[i]] = neighmat[i, Nneigh[i] - 1::-1]
+                    barmat[i, :Nneigh[i] - 1] = barmat[i, Nneigh[i] - 2::-1]
 
         # Calculate the average number of neighbors
         avg_num_neighbors = np.mean(Nneigh)
 
-        # Determine internal nodes (nodes with at least one neighbor)
-        internal_nodes = Nneigh > 0
-
-        return neighmat, barmat, Nneigh, internal_nodes, iscomplete, avg_num_neighbors
-
-
+        return neighmat, barmat, iscomplete, Nneigh, completed, avg_num_neighbors
 
     ##########################################
     # END of function defs, START of program #
@@ -454,10 +452,12 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
             'baryc_lon': None, 'baryc_lat': None, 'cellareas': None, 'elemareas': None,
             'depth': depth, 'depth_lev': depth_lev, 'boundary': boundary
         }
+
+
     if verbose:
         print("searching all neighbors of each node based on the triangular elements ...")
-    neighnodes, neighelems, Nneighs, internal_nodes, elems_completed, all_elements_arranged = findneighbours(elem, maxmaxneigh, reverse=False, max_iter=findneighbours_maxiter)
-    print(np.shape(coast),np.shape(internal_nodes))
+    neighnodes, neighelems, internal_nodes, Nneighs, elems_completed, all_elements_arranged = find_neighbors(elem, maxmaxneigh, reverse=False, max_iter=findneighbours_maxiter)
+
     if np.any(coast == internal_nodes):
         warnings.warn("coast information from nod2d.out seems to be corrupt, using diagnosed coast flag instead.")
         coast = ~internal_nodes
@@ -469,14 +469,14 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
 
     if verbose:
         print("determining which elements include coastal nodes ...")
-    elemcoast = np.array([np.sum(coast[elem[ie]]) > 1 for ie in range(Ne)])
+    elemcoast = np.array([np.sum(coast[elem[ie] - 1]) > 1 for ie in range(Ne)])
 
     if verbose:
         print("computing barycenters (centroids) for all triangular elements ...")
     baryc_lon = np.zeros(Ne)
     baryc_lat = np.zeros(Ne)
     for ie in range(Ne):
-        elem_ie = elem[ie, :]
+        elem_ie = elem[ie, :] - 1  # Adjust the indices
         lon_ie, lat_ie = barycenter(lon[elem_ie], lat[elem_ie], z[elem_ie])
         baryc_lon[ie] = lon_ie
         baryc_lat[ie] = lat_ie
@@ -485,40 +485,56 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
     if verbose:
         print("... done.")
 
+
     if verbose:
         print("generate 'stamp polygons' around each node ...")
     maxneighs = neighnodes.shape[1]
     maxNstamp = 2 * maxneighs
+    print('maxNstamp')
+    print(maxNstamp)
     stampmat_lon = np.full((N, maxNstamp), np.nan)
     stampmat_lat = np.full((N, maxNstamp), np.nan)
     Nstamp = np.full(N, np.nan)
+    print('N',N)
     for i in range(N):
         Nstamp_i = 0
         for j in range(maxneighs):
             nn = neighnodes[i, j]
+            for bla in range(18):
+                value = stampmat_lat[0, bla]
+                if np.isnan(value):
+                    value = "nan"
+                print(f'stampmat_lat[0, {bla}] {value}')
+            print('nn:',nn)
             if np.isnan(nn):
                 break
             if not onlybaryc or (coast[i] and (j == 0 or j == Nneighs[i] - 1)):
                 # compute median of central node and neighbor node
-                lon_ij, lat_ij = barycenter([lon[i], lon[int(nn)]], [lat[i], lat[int(nn)]], [z[i], z[int(nn)]])
-                Nstamp_i += 1
+                nn_index = int(nn) - 1  # Subtract 1 to correct the index
+                lon_ij, lat_ij = barycenter([lon[i], lon[nn_index]], [lat[i], lat[nn_index]], [z[i], z[nn_index]])
                 stampmat_lon[i, Nstamp_i] = lon_ij
                 stampmat_lat[i, Nstamp_i] = lat_ij
+                Nstamp_i += 1
             ne = neighelems[i, j]
+            print('ne:',ne)
+            breakpoint()
             if np.isnan(ne):
                 break
-            Nstamp_i += 1
             stampmat_lon[i, Nstamp_i] = baryc_lon[int(ne)]
             stampmat_lat[i, Nstamp_i] = baryc_lat[int(ne)]
-        if coast[i] and not omitcoastnds:
             Nstamp_i += 1
+        if coast[i] and not omitcoastnds:
             stampmat_lon[i, Nstamp_i] = lon[i]
             stampmat_lat[i, Nstamp_i] = lat[i]
+            Nstamp_i += 1
         Nstamp[i] = Nstamp_i
+
+
     if maxNstamp > int(np.max(Nstamp)):
         maxNstamp = int(np.max(Nstamp))
         stampmat_lon = stampmat_lon[:, :maxNstamp]
         stampmat_lat = stampmat_lat[:, :maxNstamp]
+
     for i in range(N):
         if Nstamp[i] < maxNstamp:
             if repeatlastpoint:
