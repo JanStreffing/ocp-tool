@@ -2,12 +2,24 @@ import numpy as np
 import os
 import warnings
 import sys
+import time
+import math
 np.set_printoptions(threshold=sys.maxsize)
 
 def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=True, remove_empty_lev=False, read_boundary=True,
                     reorder_ccw=True, maxmaxneigh=12, findneighbours_maxiter=10, repeatlastpoint=True, onlybaryc=False,
                     omitcoastnds=False, calcpolyareas=True, Rearth=6371000, basicreadonly=False, fesom2=True, verbose=True):
-    
+
+
+    def convert_elements(arr):
+        new_arr = []
+        for elem in arr:
+            if math.isnan(elem):
+                new_arr.append(-1)
+            else:
+                new_arr.append(int(elem))
+        return new_arr
+
 
     def barycenter(lon=None, lat=None, x=None, y=None, z=None, weights=None, rm_na=True):
         rad = np.pi / 180
@@ -120,9 +132,10 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         lat_fill = np.interp(np.linspace(0, 1, nfill + 2), [0, 1], lat_endpoints)
         return lon_fill[1:-1], lat_fill[1:-1]
 
+
     def triag_area(lon, lat):
         if len(lon) != 3 or len(lat) != 3:
-            raise ValueError("lon and lat must be lists or arrays of length 3!")
+            raise ValueError("lon and lat must be vectors of length 3!")
 
         ang = np.zeros(3)
 
@@ -130,64 +143,67 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
             alpha = lon[i] + 90
             beta = 90 - lat[i]
             gamma = 0
-
-            rot_res = sl.rot(lon, lat, alpha, beta, gamma, return_xyz=True)
+            rot_res = rotate(lon, lat, alpha, beta, gamma, return_xyz=True)
             x = rot_res['x']
             y = rot_res['y']
-
             a = np.array([x[i], y[i]])
-            b = np.array([x[i % 3 + 1], y[i % 3 + 1]])
-            c = np.array([x[(i + 1) % 3 + 1], y[(i + 1) % 3 + 1]])
-
+            b = np.array([x[(i + 1) % 3], y[(i + 1) % 3]])
+            c = np.array([x[(i + 2) % 3], y[(i + 2) % 3]])
             ab = b - a
             ac = c - a
 
-            with np.errstate(divide='ignore', invalid='ignore'):
-                ang[i] = np.arccos(np.dot(ab / np.linalg.norm(ab), ac / np.linalg.norm(ac)))
+            with np.errstate(invalid='ignore'):
+                ang[i] = np.arccos((np.dot(ab / np.linalg.norm(ab), ac / np.linalg.norm(ac))))
 
         if np.sum(np.isnan(ang)) > 0:
             return 0
         else:
             return np.sum(ang) - np.pi
 
-    def rotate(lon, lat, abg, invert=False):
-        if abg is None:
-            return lon, lat
 
-        abg_rad = np.deg2rad(abg)
-        a_rad, b_rad, g_rad = abg_rad[0], abg_rad[1], abg_rad[2]
-        lon_rad, lat_rad = np.deg2rad(lon), np.deg2rad(lat)
-
-        if invert:
-            a_rad, b_rad, g_rad = -a_rad, -b_rad, -g_rad
+    def rotate(lon, lat, alpha, beta, gamma, return_xyz=False, invert=False):
+        rad = np.pi / 180
+        a = alpha * rad
+        b = beta * rad
+        c = gamma * rad
+        lon = lon * rad
+        lat = lat * rad
 
         rotmat = np.zeros((3, 3))
-        rotmat[0, 0] = np.cos(g_rad) * np.cos(a_rad) - np.sin(g_rad) * np.cos(b_rad) * np.sin(a_rad)
-        rotmat[0, 1] = np.cos(g_rad) * np.sin(a_rad) + np.sin(g_rad) * np.cos(b_rad) * np.cos(a_rad)
-        rotmat[0, 2] = np.sin(g_rad) * np.sin(b_rad)
-        rotmat[1, 0] = -np.sin(g_rad) * np.cos(a_rad) - np.cos(g_rad) * np.cos(b_rad) * np.sin(a_rad)
-        rotmat[1, 1] = -np.sin(g_rad) * np.sin(a_rad) + np.cos(g_rad) * np.cos(b_rad) * np.cos(a_rad)
-        rotmat[1, 2] = np.cos(g_rad) * np.sin(b_rad)
-        rotmat[2, 0] = np.sin(b_rad) * np.sin(a_rad)
-        rotmat[2, 1] = -np.sin(b_rad) * np.cos(a_rad)
-        rotmat[2, 2] = np.cos(b_rad)
+        rotmat[0, 0] = np.cos(c) * np.cos(a) - np.sin(c) * np.cos(b) * np.sin(a)
+        rotmat[0, 1] = np.cos(c) * np.sin(a) + np.sin(c) * np.cos(b) * np.cos(a)
+        rotmat[0, 2] = np.sin(c) * np.sin(b)
+        rotmat[1, 0] = -np.sin(c) * np.cos(a) - np.cos(c) * np.cos(b) * np.sin(a)
+        rotmat[1, 1] = -np.sin(c) * np.sin(a) + np.cos(c) * np.cos(b) * np.cos(a)
+        rotmat[1, 2] = np.cos(c) * np.sin(b)
+        rotmat[2, 0] = np.sin(b) * np.sin(a)
+        rotmat[2, 1] = -np.sin(b) * np.cos(a)
+        rotmat[2, 2] = np.cos(b)
 
-        x = np.cos(lat_rad) * np.cos(lon_rad)
-        y = np.cos(lat_rad) * np.sin(lon_rad)
-        z = np.sin(lat_rad)
+        if invert:
+            rotmat = np.linalg.inv(rotmat)
+
+        x = np.cos(lat) * np.cos(lon)
+        y = np.cos(lat) * np.sin(lon)
+        z = np.sin(lat)
 
         x_rot = rotmat[0, 0] * x + rotmat[0, 1] * y + rotmat[0, 2] * z
         y_rot = rotmat[1, 0] * x + rotmat[1, 1] * y + rotmat[1, 2] * z
         z_rot = rotmat[2, 0] * x + rotmat[2, 1] * y + rotmat[2, 2] * z
-
         z_rot[z_rot > 1] = 1
         z_rot[z_rot < -1] = -1
 
-        lon_rot = np.arctan2(y_rot, x_rot) / np.pi * 180
-        with np.errstate(divide='ignore', invalid='ignore'):
-            lat_rot = np.arcsin(z_rot) / np.pi * 180
+        lon_rot = np.arctan2(y_rot, x_rot) / rad
+        np.seterr(invalid='ignore')  # Suppress warnings for invalid values
+        lat_rot = np.arcsin(z_rot) / rad
+        np.seterr(invalid='warn')  # Restore warnings for invalid values
 
-        return lon_rot, lat_rot
+        if return_xyz:
+            return {'lon': lon_rot, 'lat': lat_rot, 'x': x_rot, 'y': y_rot, 'z': z_rot}
+        else:
+            return {'lon': lon_rot, 'lat': lat_rot}
+
+
 
     def read_aux3d_out(file_path):
         with open(file_path, 'r') as file:
@@ -215,8 +231,6 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         Ne = int(lines[0])
         elem = np.array([list(map(int, line.strip().split())) for line in lines[1:]])
         return Ne, elem
-
-
 
     def read_nod2d_out(file_path):
         with open(file_path, 'r') as file:
@@ -250,11 +264,11 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
 
             if verbose:
                 print(f"Starting iteration {niter}...")
-
+            
             for ie in range(Ne):
                 if np.all(iekdone[ie, :]):
                     continue
-
+            
                 for k in range(3):
                     if iekdone[ie, k]:
                         continue
@@ -280,7 +294,7 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                         if found1 and found2:
                             if verbose:
                                 print("Found both, node complete.")
-                            barmat[i, Nneigh[i]] = ie
+                            barmat[i, Nneigh[i]-1] = ie
                             iscomplete[i] = True
                             iekdone[ie, k] = True
                         else:
@@ -291,7 +305,7 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                                 if verbose:
                                     print("Found 1.")
                                 neighmat[i, Nneigh[i]] = neigh2
-                                barmat[i, Nneigh[i]] = ie
+                                barmat[i, Nneigh[i]-1] = ie
                                 Nneigh[i] += 1
                                 iekdone[ie, k] = True
 
@@ -358,16 +372,23 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                     raise ImportError("Package 'netCDF4' is required to read FESOM2 grid data.")
     if verbose:
         print("reading node (grid point) coordinates and coast information ...")
+        start_time = time.time()
     N, lon_orig, lat_orig, coast = read_nod2d_out(os.path.join(griddir, "nod2d.out"))
     if verbose:
         print(f"... done. grid contains {N} nodes of which {np.sum(coast)} are coastal (according to info in nod2d.out).")
+        end_time = time.time()
+        print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
 
     if rot:
         if verbose:
             print("rotating grid ...")
+            start_time = time.time()
         lon, lat, x, y, z = rotate(lon_orig, lat_orig, rot_abg, invert=rot_invert)
         if verbose:
             print("... done.")
+            end_time = time.time()
+            print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
+
     else:
         lon, lat, x, y, z = lon_orig, lat_orig, np.cos(np.deg2rad(lat_orig)) * np.cos(np.deg2rad(lon_orig)), np.cos(np.deg2rad(lat_orig)) * np.sin(np.deg2rad(lon_orig)), np.sin(np.deg2rad(lat_orig))
     lon[lon > 180] -= 360
@@ -375,13 +396,17 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
 
     if verbose:
         print("reading neighbourhood (triangular elements) information ...")
+        start_time = time.time()
     Ne, elem = read_elem2d_out(os.path.join(griddir, "elem2d.out"))
     if verbose:
         print(f"... done. grid contains {Ne} triangular elements.")
+        end_time = time.time()
+        print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
 
     # Reorder clockwise triangular elements counterclockwise if specified
     if reorder_ccw:
         if verbose:
+            start_time = time.time()
             print("reordering clockwise triangular elements counterclockwise ...")
         ord_c = 0
         for ie in range(Ne):
@@ -393,7 +418,8 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                 ord_c += 1
         if verbose:
             print(f"... done. {ord_c} of {Ne} elements reordered.")
-
+            end_time = time.time()
+            print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
 
     N3D = None
     Nlev = None
@@ -404,6 +430,7 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
     boundary = None
     if threeD:
         if verbose:
+            start_time = time.time()
             print("reading 3D information ...")
         Nlev, depth, depth_bounds = read_aux3d_out(os.path.join(griddir, "aux3d.out"))
         if fesom2:
@@ -445,6 +472,10 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                 if verbose:
                     print("retrieving 'coast/bottom' information from nod3d.out ...")
                 boundary = read_nod3d_out(os.path.join(griddir, "nod3d.out"))[4::5]
+        if verbose:
+            end_time = time.time()
+            print(f"... done. Grid over all levels contains {N3D} elements.")
+            print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
     if basicreadonly:
         return {
             'N': N, 'Nlev': Nlev, 'N3D': N3D, 'lon': lon, 'lat': lat, 'elem': elem, 'coast': coast,
@@ -455,6 +486,7 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
 
 
     if verbose:
+        start_time = time.time()
         print("searching all neighbors of each node based on the triangular elements ...")
     neighnodes, neighelems, internal_nodes, Nneighs, elems_completed, all_elements_arranged = find_neighbors(elem, maxmaxneigh, reverse=False, max_iter=findneighbours_maxiter)
 
@@ -464,14 +496,23 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
     badnodes = None if all_elements_arranged else np.arange(1, N + 1)[~elems_completed]
     if verbose:
         print(f"... done. number of neighbors ranges from {np.min(Nneighs)} to {np.max(Nneighs)} nodes and is {np.mean(Nneighs):.4f} on average.")
+        end_time = time.time()
+        print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
     if badnodes is not None:
         warnings.warn(f"if 'findneighbours_maxiter' was not set too low, the grid contains {len(badnodes)} 'bad nodes'. consider increasing 'findneighbours_maxiter'. if the problem remains, the grid indeed contains bad nodes that should not exist in the first place. for such nodes only one part of the corresponding ocean patches will be returned by this function (which introduces a slight grid inaccuracy).")
 
     if verbose:
+        start_time = time.time()
         print("determining which elements include coastal nodes ...")
     elemcoast = np.array([np.sum(coast[elem[ie] - 1]) > 1 for ie in range(Ne)])
+    Nelemcoast = np.sum(elemcoast)
+    if verbose:
+        print(f"... done. grid features {Nelemcoast} elements that contain coastal nodes.")
+        end_time = time.time()
+        print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
 
     if verbose:
+        start_time = time.time()
         print("computing barycenters (centroids) for all triangular elements ...")
     baryc_lon = np.zeros(Ne)
     baryc_lat = np.zeros(Ne)
@@ -484,18 +525,18 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
     baryc_lon[baryc_lon <= -180] += 360
     if verbose:
         print("... done.")
+        end_time = time.time()
+        print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
 
 
     if verbose:
+        start_time = time.time()
         print("generate 'stamp polygons' around each node ...")
     maxneighs = neighnodes.shape[1]
     maxNstamp = 2 * maxneighs
-    print('maxNstamp')
-    print(maxNstamp)
     stampmat_lon = np.full((N, maxNstamp), np.nan)
     stampmat_lat = np.full((N, maxNstamp), np.nan)
     Nstamp = np.full(N, np.nan)
-    print('N',N)
     for i in range(N):
         Nstamp_i = 0
         for j in range(maxneighs):
@@ -504,8 +545,6 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                 value = stampmat_lat[0, bla]
                 if np.isnan(value):
                     value = "nan"
-                print(f'stampmat_lat[0, {bla}] {value}')
-            print('nn:',nn)
             if np.isnan(nn):
                 break
             if not onlybaryc or (coast[i] and (j == 0 or j == Nneighs[i] - 1)):
@@ -516,8 +555,6 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
                 stampmat_lat[i, Nstamp_i] = lat_ij
                 Nstamp_i += 1
             ne = neighelems[i, j]
-            print('ne:',ne)
-            breakpoint()
             if np.isnan(ne):
                 break
             stampmat_lon[i, Nstamp_i] = baryc_lon[int(ne)]
@@ -536,36 +573,44 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         stampmat_lat = stampmat_lat[:, :maxNstamp]
 
     for i in range(N):
-        if Nstamp[i] < maxNstamp:
+        nstamp_i_int = int(Nstamp[i])
+        if nstamp_i_int < maxNstamp:
             if repeatlastpoint:
-                stampmat_lon[i, Nstamp[i]:maxNstamp] = stampmat_lon[i, Nstamp[i] - 1]
-                stampmat_lat[i, Nstamp[i]:maxNstamp] = stampmat_lat[i, Nstamp[i] - 1]
+                stampmat_lon[i, nstamp_i_int:maxNstamp] = stampmat_lon[i, nstamp_i_int - 1]
+                stampmat_lat[i, nstamp_i_int:maxNstamp] = stampmat_lat[i, nstamp_i_int - 1]
             else:
-                lon_endpoints = np.array([stampmat_lon[i, Nstamp[i] - 1], stampmat_lon[i, 0]])
-                lat_endpoints = np.array([stampmat_lat[i, Nstamp[i] - 1], stampmat_lat[i, 0]])
-                nfill = maxNstamp - int(Nstamp[i])
+                lon_endpoints = np.array([stampmat_lon[i, nstamp_i_int - 1], stampmat_lon[i, 0]])
+                lat_endpoints = np.array([stampmat_lat[i, nstamp_i_int - 1], stampmat_lat[i, 0]])
+                nfill = maxNstamp - nstamp_i_int
                 lon_fill, lat_fill = fill_equidist(lon_endpoints, lat_endpoints, nfill)
-                stampmat_lon[i, Nstamp[i]:maxNstamp] = lon_fill
-                stampmat_lat[i, Nstamp[i]:maxNstamp] = lat_fill
+                stampmat_lon[i, nstamp_i_int:maxNstamp] = lon_fill
+                stampmat_lat[i, nstamp_i_int:maxNstamp] = lat_fill
+
     stampmat_lon[stampmat_lon > 180] -= 360
     stampmat_lon[stampmat_lon <= -180] += 360
     if verbose:
         print(f"... done. number of 'stamp polygon' vertices per node ranges from {int(np.min(Nstamp))} (before padding) to {maxNstamp} and is {np.mean(Nstamp):.4f} on average (before padding).")
+        end_time = time.time()
+        print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
 
     cellareas, elemareas = None, None
     if calcpolyareas:
         if verbose:
+            start_time = time.time()
             print("computing element and 'stamp polygon' areas ...")
         elemareas = np.zeros(Ne)
         cellareas = np.zeros(N)
         for ie in range(Ne):
-            elemareas[ie] = triag_area(lon[elem[ie, :]], lat[elem[ie, :]])
+            elemareas[ie] = triag_area(lon[elem[ie, :]-1], lat[elem[ie, :]-1])
         elemareas *= Rearth ** 2
+        neighelems_masked = np.ma.masked_invalid(neighelems)
         for i in range(N):
-            cellareas[i] = np.sum(elemareas[neighelems[i, :]], where=~np.isnan(neighelems[i, :]))
+            cellareas[i] = np.sum(elemareas[neighelems_masked[i, :]].astype(int), where=neighelems_masked)
         cellareas /= 3
         if verbose:
             print("... done.")
+            end_time = time.time()
+            print(f"... execution Time:", round(end_time - start_time, 2), "seconds")
     
     return {
         'N': N, 'Nelem': Ne, 'Nlev': Nlev, 'N3D': N3D, 'lon': lon, 'lat': lat, 'elem': elem, 'elemcoast': elemcoast, 'coast': coast,
