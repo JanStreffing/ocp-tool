@@ -603,9 +603,10 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
         for ie in range(Ne):
             elemareas[ie] = triag_area(lon[elem[ie, :]-1], lat[elem[ie, :]-1])
         elemareas *= Rearth ** 2
-        neighelems_masked = np.ma.masked_invalid(neighelems)
         for i in range(N):
-            cellareas[i] = np.sum(elemareas[neighelems_masked[i, :]].astype(int), where=neighelems_masked)
+            for j in range(np.shape(neighelems)[1]):
+                if not np.isnan(neighelems[i, j]):
+                    cellareas[i] += elemareas[neighelems[i, j].astype(int)]
         cellareas /= 3
         if verbose:
             print("... done.")
@@ -620,4 +621,3 @@ def read_fesom_grid(griddir, rot=False, rot_invert=False, rot_abg=None, threeD=T
     }
 
 out = read_fesom_grid(griddir='/work/ab0246/a270092/input/fesom2/core2/', basicreadonly=False)
-print(out)
