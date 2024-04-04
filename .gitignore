@@ -15,3 +15,9 @@ griddes.txt
 # VSCode
 .vscode
 input/ocean_input_default/
+
+
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+ocp_tool/.ipynb_checkpoints/
+input/fesom_mesh/
