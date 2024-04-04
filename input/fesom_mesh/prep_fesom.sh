@@ -66,9 +66,15 @@ fi
 
 
 # Create binary field where cell_area is 0 / >0
+echo "ncap2 -O -s 'where(cell_area>0.) cell_area=0;' ${mesh_name}_regular.nc ${mesh_name}_oce.nc"
 ncap2 -O -s 'where(cell_area>0.) cell_area=0;' ${mesh_name}_regular.nc ${mesh_name}_oce.nc
+echo "cdo setmisstoc,1 ${mesh_name}_oce.nc ${mesh_name}_land.nc"
 cdo setmisstoc,1 ${mesh_name}_oce.nc ${mesh_name}_land.nc
 
-# Remap the binary regular grid mask to OpenIFS grid
-cdo griddes $oifs_icmgg_file > griddes.txt
-cdo -setgrid,$oifs_icmgg_file -remapdis,griddes.txt ${mesh_name}_land.nc ${mesh_name}_oifs.nc
+# Remap the binary regular grid mask to OpenIFS grid.
+# To do so, first pick a field that is grib1
+grib_copy -w shortName=skt $oifs_icmgg_file skt.grb
+echo "cdo griddes skt.grb > griddes.txt"
+cdo griddes skt.grb > griddes.txt
+echo "cdo -setgrid,skt.grb -remapdis,griddes.txt ${mesh_name}_land.nc ${mesh_name}_oifs.nc"
+cdo -setgrid,skt.grb -remapdis,griddes.txt ${mesh_name}_land.nc ${mesh_name}_oifs.nc
