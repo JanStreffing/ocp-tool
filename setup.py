@@ -13,6 +13,7 @@ setuptools.setup(
         'numpy',
         'netcdf4',
         'eccodes',
+        'pyfesom2',
     ],
     entry_points={
         'scriptengine.tasks': [

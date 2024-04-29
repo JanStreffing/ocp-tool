@@ -1,4 +1,4 @@
-name: ocp-tool
+name: ocp-tool2
 channels:
   - conda-forge
   - eumetsat
@@ -9,3 +9,24 @@ dependencies:
   - pandas
   - pyyaml
   - python-eccodes
+  - jupyterlab
+  - notebook
+  - tqdm
+  name: ocp-tool2
+channels:
+  - conda-forge
+  - eumetsat
+dependencies:
+  - netcdf4
+  - matplotlib
+  - basemap
+  - pandas
+  - pyyaml
+  - python-eccodes
+  - git
+  - pip
+  - jupyterlab
+  - notebook
+  - tqdm
+  - pip:
+    - git+https://github.com/FESOM/pyfesom2.git
