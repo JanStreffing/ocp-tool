@@ -127,6 +127,7 @@ def read_grid_from_icmgg(icmfile, NN, truncation_type):
    except:
        os.system('grib_copy -w edition=1 '+file+' '+file+'.grib1')
        os.system('cdo griddes '+file+'.grib1 > griddes.txt')
+
    # read data from text file
    f = open('griddes.txt','r')
    lines = f.readlines()   
