@@ -387,7 +387,8 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path, interp_
     os.chdir(input_path_oce)
 
     # execute the command
-
+    print(' Does FESOM grid path exist? '+str(os.path.exists(fesom_grid_file_path)))
+    print(' Is the overwrite active? '+str(force_overwrite_griddes))
     if os.path.exists(fesom_grid_file_path) and force_overwrite_griddes==False:
         print(f" Using existing grid description file '{fesom_grid_file_path}'")
         cmd = './prep_fesom.sh '+fesom_grid_file_path+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
@@ -970,21 +971,21 @@ if __name__ == '__main__':
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'aack' #default for cubic-octahedral
+    exp_name_oifs = 'aben' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
-    num_fields = 50
+    num_fields = 81
 
     # Name of ocean model grid. 
     grid_name_oce = 'CORE2'
     cavity = False # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
-    interp_res = 'r3600x1801'
+    interp_res = 'r360x181'
     root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/mesh.nc'
+    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/core2_griddes_nodes.nc'
     force_overwrite_griddes = False
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
