@@ -105,7 +105,7 @@ def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, trunc
 
        
     lines = fin.readlines()
-    return (lines, NN)
+    return (lines, int(NN))
 
 
 def read_grid_from_icmgg(icmfile, NN, truncation_type):
@@ -121,8 +121,13 @@ def read_grid_from_icmgg(icmfile, NN, truncation_type):
    
    # write grid description to file
    # only need to do this once
-   os.system('cdo griddes %s > griddes.txt' % (file,))
-   
+   try:
+       os.system('grib_copy -w edition=2 '+file+' '+file+'.grib2')
+       os.system('cdo griddes '+file+'.grib2 > griddes.txt')
+   except:
+       os.system('grib_copy -w edition=1 '+file+' '+file+'.grib1')
+       os.system('cdo griddes '+file+'.grib1 > griddes.txt')
+
    # read data from text file
    f = open('griddes.txt','r')
    lines = f.readlines()   
@@ -383,21 +388,22 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path, interp_
     os.chdir(input_path_oce)
 
     # execute the command
-
+    print(' Does FESOM grid path exist? '+str(os.path.exists(fesom_grid_file_path)))
+    print(' Is the overwrite active? '+str(force_overwrite_griddes))
     if os.path.exists(fesom_grid_file_path) and force_overwrite_griddes==False:
-        print(f"Using existing grid description file '{fesom_grid_file_path}'")
+        print(f" Using existing grid description file '{fesom_grid_file_path}'")
         cmd = './prep_fesom.sh '+fesom_grid_file_path+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
     else:
         if os.path.exists(fesom_grid_file_path):
-            print(f"The file '{fesom_grid_file_path}' exists but force_overwrite_griddes=True means we make a create one anyway via pyfesom2")        
+            print(f" The file '{fesom_grid_file_path}' exists but force_overwrite_griddes=True means we make a create one anyway via pyfesom2")        
         if force_overwrite_griddes==True:
-            print(f"The file '{fesom_grid_file_path}' does not exist. Attempting to create via pyfesom2")
+            print(f" The file '{fesom_grid_file_path}' does not exist. Attempting to create via pyfesom2")
         griddir=os.path.dirname(fesom_grid_file_path)
         grid = pf.read_fesom_ascii_grid(griddir=griddir, cavity=cavity)
         pf.write_mesh_to_netcdf(grid, ofile=input_path_oce+'/mesh.nc', overwrite=True, cavity=cavity)
         cmd = './prep_fesom.sh '+input_path_oce+'/mesh.nc'+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
- 
-    print(cavity)
+    print(longline)
+    print (' Using the following command to generate OpenIFS lsm based on FESOM mesh description file:')
     print(cmd)
     print(' Reading ocean based land sea mask:', grid_name_oce)
     os.system(cmd)
@@ -412,20 +418,24 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path, interp_
     fesom_lsm = mesh.variables['cell_area']
     fesom_grid_sorted = fesom_lsm[:]
     
-    print(longline)
-    
     return fesom_grid_sorted
 
 
-def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields,verbose=False):
+def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields, verbose=False):
     '''
-    This function reads the oifs input file in grib format and save it into a
-    list of numpy arrays.
+    This function reads the oifs input file in grib format and saves it into a
+    list of numpy arrays. It also filters out additional timesteps of the 'lsm'
+    parameter.
     '''
+    print(longline)
     print(' Opening Grib input file: %s ' % (input_path_oifs,))
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
     gid = [None] * num_fields
     gribfield = [None] * num_fields
+
+    # Flag to track if the first 'lsm' timestep has been saved
+    lsm_saved = False
+
     with open(input_file_oifs, 'rb') as f:
         keys = ['N', 'shortName']
 
@@ -442,19 +452,36 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
 
             shortName = gribapi.grib_get(gid[i], 'shortName')
 
-            if shortName == 'lsm':
+            if shortName == 'lsm' and not lsm_saved:
                 lsm_id = i
+                lsm_saved = True  # Set the flag to True after saving the first 'lsm' timestep
+                values = gribapi.grib_get_values(gid[i])
+                if verbose:
+                    print(f"Shape of 'lsm' values for the first timestep: {np.shape(values)}")
+                gribfield[i] = values
+            elif shortName == 'lsm' and lsm_saved:
+                if verbose:
+                    print(f"Skipping duplicate lsm fields")
+                num_fields=num_fields-1
+                gribfield[i] = None  # Skip subsequent 'lsm' timesteps by setting them to None
+
             if shortName == 'slt':
                 slt_id = i
             if shortName == 'cl':
                 cl_id = i
 
-            nres = gribapi.grib_get(gid[i], 'N')
-            gribfield[i] = gribapi.grib_get_values(gid[i])
+            if not lsm_saved or shortName != 'lsm':
+                nres = gribapi.grib_get(gid[i], 'N')
+                values = gribapi.grib_get_values(gid[i])
+                if verbose:
+                    print(f"Shape of '{shortName}' values: {np.shape(values)}")
+                gribfield[i] = values
 
-    return (gribfield, lsm_id, slt_id, cl_id, gid)
+    # Filter out None values from gribfield
+    gribfield = [field for field in gribfield if field is not None]
+    print(longline)
 
-
+    return (gribfield, lsm_id, slt_id, cl_id, gid, num_fields)
 
 
 
@@ -523,7 +550,7 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs,
     modified in the exact same locations
     '''
 
-    gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, 
+    gribfield, lsm_id, slt_id, cl_id, gid, num_fields = read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields,verbose=verbose)
     lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
@@ -554,7 +581,6 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
     atmf is the fraction of ocean in each cell, but
     IFS always has 1 or 0, so it is the same as atmo.
     '''
-
     if len(str(NN))>4:
         NN = int(str(NN)[:-1])
     
@@ -917,10 +943,6 @@ def modify_lsm(gribfield, fesom_grid_sorted, lsm_id, slt_id, cl_id, lons_list,
             gribfield_mod[slt_id][i] = 0
             gribfield_mod[lsm_id][i] = 0
             
-    #gribfield_mod[lsm_id]=fesom_grid_sorted
-    
-
-    
     # Mask with lakes counting as land in correct format for oasis3-mct file
     lsm_binary_a = gribfield_mod[lsm_id]
     lsm_binary_a = lsm_binary_a[np.newaxis, :]
@@ -928,7 +950,6 @@ def modify_lsm(gribfield, fesom_grid_sorted, lsm_id, slt_id, cl_id, lons_list,
     return (lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
 
 
-# In[5]:
 
 
 #-----------------------------------------------------------------------------
@@ -944,29 +965,29 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [159]
+    resolution_list = [95]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'linear'
+    truncation_type = 'cubic-octahedral'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'abda'#default for cubic-octahedral
+    exp_name_oifs = 'aben' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
-    num_fields = 50
+    num_fields = 81
 
     # Name of ocean model grid. 
     grid_name_oce = 'CORE2'
     cavity = False # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
-    interp_res = 'r360x181'
-    root_dir = '/work/ab0246/a270092/software/ocp-tool2/'
+    interp_res = 'r3600x1801'
+    root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/core2/mesh.nc'
-    force_overwrite_griddes = True
+    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/core2_griddes_nodes.nc'
+    force_overwrite_griddes = False
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
     input_path_oifs = root_dir+'input/openifs_input_default/'
