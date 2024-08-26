@@ -121,7 +121,6 @@ def read_grid_from_icmgg(icmfile, NN, truncation_type):
    
    # write grid description to file
    # only need to do this once
-   breakpoint()
    os.system('cdo griddes %s > griddes.txt' % (file,))
    
    # read data from text file
