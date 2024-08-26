@@ -976,7 +976,7 @@ if __name__ == '__main__':
     num_fields = 50
 
     # Name of ocean model grid. 
-    grid_name_oce = 'PI'
+    grid_name_oce = 'CORE2'
     cavity = False # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
