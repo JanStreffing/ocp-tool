@@ -427,6 +427,7 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     list of numpy arrays. It also filters out additional timesteps of the 'lsm'
     parameter.
     '''
+
     print(longline)
     print(' Opening Grib input file: %s ' % (input_path_oifs,))
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
@@ -438,7 +439,8 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
 
     with open(input_file_oifs, 'rb') as f:
         keys = ['N', 'shortName']
-
+        if verbose:
+            print('num_fields'+str(num_fields))
         for i in range(num_fields):
             gid[i] = gribapi.grib_new_from_file(f)
             if gid[i] is None:
@@ -451,20 +453,10 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
                     print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
 
             shortName = gribapi.grib_get(gid[i], 'shortName')
-
-            if shortName == 'lsm' and not lsm_saved:
+            if shortName == 'lsm':
                 lsm_id = i
-                lsm_saved = True  # Set the flag to True after saving the first 'lsm' timestep
-                values = gribapi.grib_get_values(gid[i])
-                if verbose:
-                    print(f"Shape of 'lsm' values for the first timestep: {np.shape(values)}")
-                gribfield[i] = values
-            elif shortName == 'lsm' and lsm_saved:
-                if verbose:
-                    print(f"Skipping duplicate lsm fields")
-                num_fields=num_fields-1
-                gribfield[i] = None  # Skip subsequent 'lsm' timesteps by setting them to None
-
+                num_timesteps = gribapi.grib_get(gid[i], 'numberOfDataPoints')
+                print('number of lsm timesteps: '+str(num_timesteps))
             if shortName == 'slt':
                 slt_id = i
             if shortName == 'cl':
@@ -480,13 +472,14 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     # Filter out None values from gribfield
     gribfield = [field for field in gribfield if field is not None]
     print(longline)
+    print('Shape of Gribfield:'+str(np.shape(gribfield)))
 
     return (gribfield, lsm_id, slt_id, cl_id, gid, num_fields)
 
 
 
 def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
-              grid_name_oce, num_fields, gid,verbose=False):
+              grid_name_oce, num_fields, gid, lsm_id,verbose=False):
     '''
     This function copies the input gribfile to the output folder and modifies
     it by writing the whole gribfield_mod, including the altered land sea mask
@@ -497,11 +490,62 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
     output_file_oifs = output_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT_' + grid_name_oce
     copy2(input_file_oifs, output_file_oifs)
 
+    # Step 1: Open the GRIB file in read mode and read existing messages
+    with open(output_file_oifs, 'rb') as f:
+        # Initialize a list to store (gid, dataDate) tuples for 'lsm' fields
+        lsm_datadates = []
+
+        # Iterate through the GRIB messages
+        while True:
+            gidi = gribapi.grib_new_from_file(f)
+            if gidi is None:
+                break  # No more messages
+
+            # Check if the field is 'lsm'
+            shortName = gribapi.grib_get(gidi, 'shortName')
+            if shortName == 'lsm':
+                # Read and store the dataDate for 'lsm'
+                data_date = gribapi.grib_get(gidi, 'dataDate')
+                lsm_datadates.append((gidi, data_date))  # Store handle with dataDate
+
+        print('lsm_datadates:', lsm_datadates)  # Print the extracted dataDate values
+
+    # Step 2: Open the GRIB file in write mode and overwrite 'lsm' data with correct dates
     with open(output_file_oifs, 'r+b') as f:
+        # Initialize an index for gribfield_mod to track which field we are using
+        lsm_index = 0
+
+        # Process each 'lsm' entry separately
+        for gidi, data_date in lsm_datadates:
+            print('Overwriting lsm for date:', data_date)
+
+            # Ensure the index is within the range of gribfield_mod
+            if lsm_index < len(gribfield_mod):
+                # Set the values for the 'lsm' field using the correct index
+                gribapi.grib_set_values(gidi, gribfield_mod[lsm_id].flatten())
+
+                # Set the correct dataDate
+                gribapi.grib_set(gidi, 'dataDate', data_date)  # Use the stored dataDate
+
+                # Write the message for the current dataDate
+                gribapi.grib_write(gidi, f)
+
+                # Increment the index for the next 'lsm' field
+                lsm_index += 1
+            else:
+                print(f"Error: Index {lsm_index} out of range for gribfield_mod.")
+
+            # Release handle after writing
+            gribapi.grib_release(gidi)
+
+        # Handle non-lsm fields separately
         for i in range(num_fields):
-            gribapi.grib_set_values(gid[i], gribfield_mod[i])
-            gribapi.grib_write(gid[i], f)
+            shortName = gribapi.grib_get(gid[i], 'shortName')
+            if shortName != 'lsm':
+                gribapi.grib_set_values(gid[i], gribfield_mod[i])
+                gribapi.grib_write(gid[i], f)
             gribapi.grib_release(gid[i])
+
 
 
 def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=False):
@@ -561,7 +605,7 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs,
                                                            gridcell_area,
                                                            verbose=verbose)
     write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
-              grid_name_oce, num_fields, gid,verbose=verbose)
+              grid_name_oce, num_fields, gid, lsm_id, verbose=verbose)
     return (lsm_binary_a,lsm_binary_l,lsm_binary_r,gribfield_mod)
 
 
@@ -972,7 +1016,7 @@ if __name__ == '__main__':
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'aben' #default for cubic-octahedral
+    exp_name_oifs = 'ab45' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
@@ -983,6 +1027,7 @@ if __name__ == '__main__':
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r3600x1801'
+    #interp_res = 'r90x46'
     root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
