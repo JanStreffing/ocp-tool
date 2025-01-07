@@ -478,8 +478,8 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
 
 
 
-def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
-              grid_name_oce, num_fields, gid, lsm_id,verbose=False):
+def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, output_path_lpjg,
+              grid_name_oce, num_fields, gid, lsm_id, lsm_lat, lsm_lon, res_num, truncation_type, verbose=False):
     '''
     This function copies the input gribfile to the output folder and modifies
     it by writing the whole gribfield_mod, including the altered land sea mask
@@ -546,6 +546,15 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
                 gribapi.grib_write(gid[i], f)
             gribapi.grib_release(gid[i])
 
+    # Write LPJ-Guess gridlist file
+    if truncation_type == 'linear':
+        gridlist_name = 'gridlist_TL'+str(res_num)+'_'+grid_name_oce+'.txt'
+    elif truncation_type == 'cubic-octahedral':
+        gridlist_name = 'gridlist_TCO'+str(res_num)+'_'+grid_name_oce+'.txt'
+    with open(output_path_lpjg+gridlist_name, "w") as file:
+        # Write coordinates in the format "lat lon"
+        for lat, lon in zip(lsm_lat, lsm_lon):
+            file.write(f"{lat} {lon}\n")
 
 
 def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=False):
@@ -583,8 +592,8 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
     return (center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN)
 
 
-def process_lsm(res_num, input_path_oifs, output_path_oifs,
-                                 exp_name_oifs, grid_name_oce, num_fields,
+def process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
+                                 exp_name_oifs, output_path_lpjg, grid_name_oce, num_fields,
                                  fesom_grid_sorted, lons_list,
                                  center_lats, center_lons,crn_lats, crn_lons, 
                                  gridcell_area,verbose=False):
@@ -597,15 +606,15 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs,
     gribfield, lsm_id, slt_id, cl_id, gid, num_fields = read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields,verbose=verbose)
-    lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
+    lsm_lat, lsm_lon, lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
                                                            fesom_grid_sorted, 
                                                            lsm_id, slt_id, cl_id, 
                                                            lons_list, center_lats, 
                                                            center_lons, crn_lats, crn_lons, 
                                                            gridcell_area,
                                                            verbose=verbose)
-    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
-              grid_name_oce, num_fields, gid, lsm_id, verbose=verbose)
+    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, output_path_lpjg,
+              grid_name_oce, num_fields, gid, lsm_id, lsm_lat, lsm_lon, res_num, truncation_type, verbose=verbose)
     return (lsm_binary_a,lsm_binary_l,lsm_binary_r,gribfield_mod)
 
 
@@ -980,8 +989,8 @@ def modify_lsm(gribfield, fesom_grid_sorted, lsm_id, slt_id, cl_id, lons_list,
     for i in np.arange (0, len(gribfield_mod[slt_id])-1):
         if gribfield_mod[lsm_id][i] <= 0.5 and fesom_grid_sorted[i] >= .99:
             gribfield_mod[slt_id][i] = 6
-            gribfield_mod[lsm_id][i] = 1 
-            
+            gribfield_mod[lsm_id][i] = 1
+
     for i in np.arange (0, len(gribfield_mod[slt_id])-1):
         if gribfield_mod[lsm_id][i] >= 0.5 and fesom_grid_sorted[i] < .99:
             gribfield_mod[slt_id][i] = 0
@@ -991,7 +1000,16 @@ def modify_lsm(gribfield, fesom_grid_sorted, lsm_id, slt_id, cl_id, lons_list,
     lsm_binary_a = gribfield_mod[lsm_id]
     lsm_binary_a = lsm_binary_a[np.newaxis, :]
 
-    return (lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
+    # Generate list of new OpenIFS land points for LPJ-Guess
+    lsm_lat=[]
+    lsm_lon=[]
+    for i in np.arange (0, len(gribfield_mod[slt_id])-1):
+        if gribfield_mod[lsm_id][i] >= 0.5:
+            lsm_lat.append(center_lats[0,i])
+            lsm_lon.append(center_lons[0,i])
+    print('Number of land points: '+str(len(lsm_lat)))
+
+    return (lsm_lat, lsm_lon, lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
 
 
 
@@ -1009,14 +1027,14 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [95]
+    resolution_list = [159]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'cubic-octahedral'
+    truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'ab45' #default for cubic-octahedral
+    exp_name_oifs = 'abis' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
@@ -1042,8 +1060,7 @@ if __name__ == '__main__':
     output_path_oifs = root_dir+'output/openifs_input_modified/'
     output_path_runoff = root_dir+'output/runoff_map_modified/'
     output_path_oasis = root_dir+'output/oasis_mct3_input/'
-    
-    
+    output_path_lpjg = root_dir+'output/lpj-guess/'
     
     
     
@@ -1073,8 +1090,8 @@ if __name__ == '__main__':
                                           cavity=cavity, force_overwrite_griddes=force_overwrite_griddes, 
                                           verbose=verbose)
         
-        lsm_binary_a,lsm_binary_l,lsm_binary_r, gribfield_mod = process_lsm(res_num, input_path_oifs, output_path_oifs,
-                                 exp_name_oifs, grid_name_oce, num_fields,
+        lsm_binary_a,lsm_binary_l,lsm_binary_r, gribfield_mod = process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
+                                 exp_name_oifs, output_path_lpjg, grid_name_oce, num_fields,
                                  fesom_grid_sorted, lons_list,
                                  center_lats, center_lons, crn_lats, crn_lons, 
                                  gridcell_area, verbose=verbose)
