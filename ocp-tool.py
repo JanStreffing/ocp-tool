@@ -592,11 +592,17 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
         # For OpenIFS + NEMO + Runoffmapper we need two atmosphere grids:
         # atmo: used for atm->ocn remapping (to find ocean)
         # atmr: used for atm->runoff remapping (to find land)
+        if truncation_type == 'cubic-octahedral':
+            lpjg_oasis_name = 'TCO' + str(NN-1) + '-land'
+        elif truncation_type == 'linear':
+            lpjg_oasis_name = 'TL' + str(NN*2-1) + '-land'
 
-        for grids_name in ('{}{:03}'.format(s, int(NN)) for s in ('A', 'L', 'R')):
-
-            # OASIS requires certain names for the dimensions etc
+        for grids_name in (
+            '{}{:03}'.format(s, int(NN)) if s in ('A', 'L', 'R') else s
+            for s in ('A', 'L', 'R', lpjg_oasis_name)
+        ):
             print(' Write lons, lats, corner points for grid: %s ' % (grids_name,), '(T%s)' % (res_num,))
+
             xname = 'x_%s' % (grids_name,)
             yname = 'y_%s' % (grids_name,)
             lonname = '%s.lon' % (grids_name,)
@@ -612,7 +618,7 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
             id_lat.units = 'degrees_north'
             id_lat.standard_name = 'Latitude'
 
-         # Write corner points to grids file
+        # Write corner points to grids file
             if filebase == 'grids':
                 crnname = 'crn_%s' % (grids_name,)
                 cloname = '%s.clo' % (grids_name,)
@@ -621,19 +627,19 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_clo = nc.createVariable(cloname, 'float64', (crnname, yname, xname))
                 id_cla = nc.createVariable(claname, 'float64', (crnname, yname, xname))
 
-         # Write land-sea masks to masks file
+        # Write land-sea masks to masks file
             elif filebase == 'masks':
                 mskname = '%s.msk' % (grids_name,)
                 id_msk = nc.createVariable(mskname, 'int32', (yname, xname))
-                id_msk.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
+                id_msk.coordinates = '%s.lat %s.lon' % (grids_name, grids_name)
                 id_msk.valid_min = 0.
                 id_msk.valid_max = 1
 
-         # Write grid cell area to areas file
+        # Write grid cell area to areas file
             elif filebase == 'areas':
                 areaname = '%s.srf' % (grids_name,)
                 id_area = nc.createVariable(areaname, 'float64', (yname, xname))
-                id_area.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
+                id_area.coordinates = '%s.lat %s.lon' % (grids_name, grids_name)
 
             id_lon[:, :] = center_lons[:, :]
             id_lat[:, :] = center_lats[:, :]
@@ -651,8 +657,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_cla.valid_max = crn_lats.max()
 
             elif filebase == 'masks':
-                if grids_name.startswith('A') :
-                    id_msk[:, :] = np.round(lsm_binary_a[:, :])  
+                if grids_name.startswith('A') or grids_name.startswith('TL-land'):
+                    id_msk[:, :] = np.round(lsm_binary_a[:, :])
                 elif grids_name.startswith('L'):
                     id_msk[:, :] = np.round(lsm_binary_l[:, :])
                 elif grids_name.startswith('R'):
@@ -660,6 +666,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                         id_msk[:, :] = np.abs(np.round(lsm_binary_r[:, :] - 1))
                     else:
                         id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
+                elif '-land' in grids_name and ('TCO' in grids_name or 'TL' in grids_name):
+                    id_msk[:, :] = np.round(lsm_binary_a[:, :])
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
@@ -965,14 +973,14 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [95]
+    resolution_list = [159]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'cubic-octahedral'
+    truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'aben' #default for cubic-octahedral
+    exp_name_oifs = 'abis' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
