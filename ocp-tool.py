@@ -753,9 +753,9 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
     print("Saving interpolated dataset")
 
     if truncation_type == 'cubic-octahedral':
-        vegin_name = 'TCO' + str(NN-1) + '.nc'
+        vegin_name = 'vegin_TCO' + str(NN-1) + '.nc'
     elif truncation_type == 'linear':
-        vegin_name = 'TL' + str(NN*2-1) + '.nc'
+        vegin_name = 'vegin_TL' + str(NN*2-1) + '.nc'
 
     interpolated_ds.to_netcdf(f"{output_path_lpjg}/"+vegin_name, mode="w")
 
