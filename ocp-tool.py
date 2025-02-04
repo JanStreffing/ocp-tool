@@ -50,6 +50,8 @@ import matplotlib.pyplot as plt
 import gribapi
 import csv
 import math
+import xarray as xr
+import shutil
 from pathlib import Path
 
 
@@ -58,6 +60,8 @@ from tqdm import tqdm
 from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 from shutil import copy2
+from scipy.spatial import cKDTree
+
 
 #-----------------------------------------------------------------------------
 # Setup
@@ -565,9 +569,9 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs,
     return (lsm_binary_a,lsm_binary_l,lsm_binary_r,gribfield_mod)
 
 
-def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, center_lons, 
-                      crn_lats, crn_lons, gridcell_area, lsm_binary_a ,lsm_binary_l , lsm_binary_r, 
-                      NN, input_path_runoff,verbose=False):
+def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg, output_path_lpjg, 
+                      center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a, 
+                      lsm_binary_l , lsm_binary_r, NN, input_path_runoff,verbose=False):
     '''
     This function writes the binary masks, areas and grids files for
     oasis3-mct
@@ -657,7 +661,7 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_cla.valid_max = crn_lats.max()
 
             elif filebase == 'masks':
-                if grids_name.startswith('A') or grids_name.startswith('TL-land'):
+                if grids_name.startswith('A'):
                     id_msk[:, :] = np.round(lsm_binary_a[:, :])
                 elif grids_name.startswith('L'):
                     id_msk[:, :] = np.round(lsm_binary_l[:, :])
@@ -667,7 +671,7 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                     else:
                         id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
                 elif '-land' in grids_name and ('TCO' in grids_name or 'TL' in grids_name):
-                    id_msk[:, :] = np.round(lsm_binary_a[:, :])
+                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
@@ -677,25 +681,181 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_area.valid_max = gridcell_area.max()
 
 
-        # Copying runoff mapper grids and areas into oasis3-mct files
+    # Step 1: Read input files
+    print("Read input files")
+    vegin_grid = xr.open_dataset(f"{input_path_lpjg}/vegin_grid.nc")
+    vegin = xr.open_dataset(f"{input_path_lpjg}/vegin.nc")
 
-        input_file_rnf = '%srunoff_%s.nc' % (input_path_runoff, filebase)
-        rnffile = Dataset(input_file_rnf, 'r')
+    # Extract source grid and data
+    print("Extract source grid and data")
+    src_lon = np.squeeze(vegin_grid["A128.lon"].values)
+    src_lat = np.squeeze(vegin_grid["A128.lat"].values)
+    variables_to_interpolate = list(vegin.data_vars)
 
-        nc.setncatts(rnffile.__dict__)
-        for name, dimension in rnffile.dimensions.items():
-            nc.createDimension(name, len(dimension) if not dimension.isunlimited() else None)
+    # Prepare target grid
+    print("Prepare target grid")
+    target_lon = np.squeeze(center_lons)
+    target_lat = np.squeeze(center_lats)
 
-        for name, variable in rnffile.variables.items():
-            var_out = nc.createVariable(name, variable.datatype, variable.dimensions)
-            var_out.setncatts({k: variable.getncattr(k) for k in variable.ncattrs()})
-            var_out[:] = variable[:]
+    # Create a KDTree for nearest-neighbor interpolation
+    print("Create a KDTree for nearest-neighbor interpolation")
+    src_points = np.column_stack((src_lon, src_lat))
+    target_points = np.column_stack((target_lon, target_lat))
+    tree = cKDTree(src_points)
+    _, idx = tree.query(target_points)
 
-        rnffile.close()
-        nc.close()
-        print(' Wrote %s ' % (filename,))
+    # Step 2: Create a new dataset based on the original
+    print("Creating interpolated dataset")
+    interpolated_ds = vegin.copy()
 
-        print(longline)
+    # Adjust the dimensions to match the new grid size
+    print("Adjusting dimensions...")
+    for dim_name, dim_size in interpolated_ds.dims.items():
+        if dim_size == len(src_lon):  # Replace source grid size with target grid size
+            print(f"Updating dimension: {dim_name} from {dim_size} to {len(target_lon)}")
+            interpolated_ds = interpolated_ds.rename_dims({dim_name: f"{dim_name}_old"})
+            interpolated_ds = interpolated_ds.assign_coords({f"{dim_name}_old": np.arange(dim_size)})
+            interpolated_ds = interpolated_ds.assign_coords({dim_name: np.arange(len(target_lon))})
+
+    # Interpolate variables
+    print("Interpolating variables...")
+    for var in variables_to_interpolate:
+        try:
+            src_data = vegin[var].values.squeeze()
+
+            # Handle variables that should retain original dimensions
+            original_dims = vegin[var].dims
+            if len(original_dims) == 1 and original_dims[0].endswith("_ncnt"):
+                print(f"Skipping interpolation for {var} (retaining original dimension)")
+                continue
+
+            # Handle single-value variables
+            if src_data.size == 1:
+                print(f"Variable {var} has a single value; replicating across the grid.")
+                interpolated = np.full(target_lon.shape, src_data.item())
+                interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+                continue
+
+            # Check size alignment
+            if src_data.size != src_points.shape[0]:
+                print(f"Skipping variable {var} due to size mismatch.")
+                continue
+
+            # Perform interpolation
+            src_data_flat = src_data.ravel()
+            interpolated = src_data_flat[idx].reshape(target_lon.shape)
+            interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+            print(f"Updated variable: {var}")
+        except Exception as e:
+            print(f"Error interpolating variable {var}: {e}")
+
+    # Save the modified dataset
+    print("Saving interpolated dataset")
+    interpolated_ds.to_netcdf(f"{output_path_lpjg}/vegin_TL159.nc", mode="w")
+
+    print(f"Interpolated data successfully saved to {output_path_lpjg}/vegin_TL159.nc")
+
+
+
+
+    '''
+    #Interpolate LPJ-Guess vegin.nc
+    # Read input files
+    print(' Read input files')
+    vegin_grid = xr.open_dataset(f"{input_path_lpjg}/vegin_grid.nc")
+    vegin = xr.open_dataset(f"{input_path_lpjg}/vegin.nc")
+
+    # Extract source grid and data
+    print(' Extract source grid and data')
+    src_lon = np.squeeze(vegin_grid["A128.lon"].values)
+    src_lat = np.squeeze(vegin_grid["A128.lat"].values)
+    variables_to_interpolate = list(vegin.data_vars)
+    variable_dims = {var: vegin[var].dims for var in vegin.data_vars}
+
+    # Prepare target grid
+    print(' Prepare target grid')
+    target_lon = np.squeeze(center_lons)
+    target_lat = np.squeeze(center_lats)
+
+    # Create a KDTree for nearest-neighbor interpolation
+    print(' Create a KDTree for nearest-neighbor interpolation')
+    src_points = np.column_stack((src_lon, src_lat))
+    target_points = np.column_stack((target_lon, target_lat))
+    tree = cKDTree(src_points)
+    _, idx = tree.query(target_points)
+
+
+    # Initialize the output dataset with interpolated data
+    interpolated_data = {}
+
+    for var in variables_to_interpolate:
+        print(f" Interpolating variable: {var}")
+        dims = variable_dims[var]  # Extract original dimension names for the variable
+        src_data = vegin[var].values.squeeze()  # Remove unnecessary dimensions
+
+        # Handle single-value variables
+        if src_data.size == 1:
+            print(f" Variable {var} has a single value; replicating across the grid.")
+            interpolated = np.full(target_lon.shape, src_data.item())
+            interpolated = interpolated[np.newaxis, :]  # Add back the "y" dimension
+            dims = ("y", "x")  # Adjust to reflect the interpolation dimensions
+            interpolated_data[var] = (dims, interpolated)
+            continue
+
+        # Check if source data size matches the source grid size
+        if src_data.size != src_points.shape[0]:
+            print(f" Skipping variable {var} due to size mismatch.")
+            continue
+
+        # Perform interpolation
+        src_data_flat = src_data.ravel()
+        interpolated = src_data_flat[idx].reshape(target_lon.shape)
+        interpolated = interpolated[np.newaxis, :]  # Add back the "y" dimension
+        interpolated_data[var] = (dims, interpolated)
+
+    # Create the output dataset
+    output_ds = xr.Dataset()
+
+    # Add dimensions
+    output_ds = xr.Dataset(
+        coords={
+            "x": ("x", target_lon),  # New "x" dimension
+            "y": ("y", [1]),  # Keep the same "y" dimension
+        }
+    )
+
+    # Add variables with their original dimensions and attributes
+    for var, (dims, data) in interpolated_data.items():
+        output_ds[var] = xr.DataArray(data, dims=dims)
+
+    # Copy attributes from the original dataset
+    output_ds.attrs = vegin.attrs
+
+    # Save the output dataset
+    output_ds.to_netcdf(output_path_lpjg+'/vegin_TL159.nc')
+    print(f"Interpolated data saved to {output_path_lpjg}")
+    '''
+
+
+    # Copying runoff mapper grids and areas into oasis3-mct files
+
+    input_file_rnf = '%srunoff_%s.nc' % (input_path_runoff, filebase)
+    rnffile = Dataset(input_file_rnf, 'r')
+
+    nc.setncatts(rnffile.__dict__)
+    for name, dimension in rnffile.dimensions.items():
+        nc.createDimension(name, len(dimension) if not dimension.isunlimited() else None)
+
+    for name, variable in rnffile.variables.items():
+        var_out = nc.createVariable(name, variable.datatype, variable.dimensions)
+        var_out.setncatts({k: variable.getncattr(k) for k in variable.ncattrs()})
+        var_out[:] = variable[:]
+
+    rnffile.close()
+    nc.close()
+    print(' Wrote %s ' % (filename,))
+
+    print(longline)
 
 
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
@@ -991,6 +1151,7 @@ if __name__ == '__main__':
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r3600x1801'
+    interp_res = 'r180x90'
     root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
@@ -1000,11 +1161,13 @@ if __name__ == '__main__':
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
     input_path_oifs = root_dir+'input/openifs_input_default/'
     input_path_runoff = root_dir+'input/runoff_map_default/'
+    input_path_lpjg = root_dir+'input/lpj-guess/'
 
     # Output file directories.
     output_path_oifs = root_dir+'output/openifs_input_modified/'
     output_path_runoff = root_dir+'output/runoff_map_modified/'
     output_path_oasis = root_dir+'output/oasis_mct3_input/'
+    output_path_lpjg = root_dir+'output/lpj-guess/'
     
     
     
@@ -1043,7 +1206,7 @@ if __name__ == '__main__':
                                  gridcell_area, verbose=verbose)
 
         write_oasis_files(res_num,
-                          output_path_oasis, grid_name_oce,
+                          output_path_oasis, grid_name_oce, input_path_lpjg, output_path_lpjg,
                           center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
                           lsm_binary_a, lsm_binary_l, lsm_binary_r, NN, input_path_runoff,verbose=verbose)
         
