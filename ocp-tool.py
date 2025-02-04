@@ -751,90 +751,15 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
 
     # Save the modified dataset
     print("Saving interpolated dataset")
-    interpolated_ds.to_netcdf(f"{output_path_lpjg}/vegin_TL159.nc", mode="w")
 
-    print(f"Interpolated data successfully saved to {output_path_lpjg}/vegin_TL159.nc")
+    if truncation_type == 'cubic-octahedral':
+        vegin_name = 'TCO' + str(NN-1) + '.nc'
+    elif truncation_type == 'linear':
+        vegin_name = 'TL' + str(NN*2-1) + '.nc'
 
+    interpolated_ds.to_netcdf(f"{output_path_lpjg}/"+vegin_name, mode="w")
 
-
-
-    '''
-    #Interpolate LPJ-Guess vegin.nc
-    # Read input files
-    print(' Read input files')
-    vegin_grid = xr.open_dataset(f"{input_path_lpjg}/vegin_grid.nc")
-    vegin = xr.open_dataset(f"{input_path_lpjg}/vegin.nc")
-
-    # Extract source grid and data
-    print(' Extract source grid and data')
-    src_lon = np.squeeze(vegin_grid["A128.lon"].values)
-    src_lat = np.squeeze(vegin_grid["A128.lat"].values)
-    variables_to_interpolate = list(vegin.data_vars)
-    variable_dims = {var: vegin[var].dims for var in vegin.data_vars}
-
-    # Prepare target grid
-    print(' Prepare target grid')
-    target_lon = np.squeeze(center_lons)
-    target_lat = np.squeeze(center_lats)
-
-    # Create a KDTree for nearest-neighbor interpolation
-    print(' Create a KDTree for nearest-neighbor interpolation')
-    src_points = np.column_stack((src_lon, src_lat))
-    target_points = np.column_stack((target_lon, target_lat))
-    tree = cKDTree(src_points)
-    _, idx = tree.query(target_points)
-
-
-    # Initialize the output dataset with interpolated data
-    interpolated_data = {}
-
-    for var in variables_to_interpolate:
-        print(f" Interpolating variable: {var}")
-        dims = variable_dims[var]  # Extract original dimension names for the variable
-        src_data = vegin[var].values.squeeze()  # Remove unnecessary dimensions
-
-        # Handle single-value variables
-        if src_data.size == 1:
-            print(f" Variable {var} has a single value; replicating across the grid.")
-            interpolated = np.full(target_lon.shape, src_data.item())
-            interpolated = interpolated[np.newaxis, :]  # Add back the "y" dimension
-            dims = ("y", "x")  # Adjust to reflect the interpolation dimensions
-            interpolated_data[var] = (dims, interpolated)
-            continue
-
-        # Check if source data size matches the source grid size
-        if src_data.size != src_points.shape[0]:
-            print(f" Skipping variable {var} due to size mismatch.")
-            continue
-
-        # Perform interpolation
-        src_data_flat = src_data.ravel()
-        interpolated = src_data_flat[idx].reshape(target_lon.shape)
-        interpolated = interpolated[np.newaxis, :]  # Add back the "y" dimension
-        interpolated_data[var] = (dims, interpolated)
-
-    # Create the output dataset
-    output_ds = xr.Dataset()
-
-    # Add dimensions
-    output_ds = xr.Dataset(
-        coords={
-            "x": ("x", target_lon),  # New "x" dimension
-            "y": ("y", [1]),  # Keep the same "y" dimension
-        }
-    )
-
-    # Add variables with their original dimensions and attributes
-    for var, (dims, data) in interpolated_data.items():
-        output_ds[var] = xr.DataArray(data, dims=dims)
-
-    # Copy attributes from the original dataset
-    output_ds.attrs = vegin.attrs
-
-    # Save the output dataset
-    output_ds.to_netcdf(output_path_lpjg+'/vegin_TL159.nc')
-    print(f"Interpolated data saved to {output_path_lpjg}")
-    '''
+    print(f"Interpolated data successfully saved to {output_path_lpjg}/"+vegin_name)
 
 
     # Copying runoff mapper grids and areas into oasis3-mct files
