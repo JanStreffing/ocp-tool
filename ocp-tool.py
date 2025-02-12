@@ -50,6 +50,8 @@ import matplotlib.pyplot as plt
 import gribapi
 import csv
 import math
+import xarray as xr
+import shutil
 from pathlib import Path
 
 
@@ -58,6 +60,8 @@ from tqdm import tqdm
 from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 from shutil import copy2
+from scipy.spatial import cKDTree
+
 
 #-----------------------------------------------------------------------------
 # Setup
@@ -618,9 +622,9 @@ def process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
     return (lsm_binary_a,lsm_binary_l,lsm_binary_r,gribfield_mod)
 
 
-def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, center_lons, 
-                      crn_lats, crn_lons, gridcell_area, lsm_binary_a ,lsm_binary_l , lsm_binary_r, 
-                      NN, input_path_runoff,verbose=False):
+def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg, output_path_lpjg, 
+                      center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a, 
+                      lsm_binary_l , lsm_binary_r, NN, input_path_runoff,verbose=False):
     '''
     This function writes the binary masks, areas and grids files for
     oasis3-mct
@@ -645,11 +649,17 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
         # For OpenIFS + NEMO + Runoffmapper we need two atmosphere grids:
         # atmo: used for atm->ocn remapping (to find ocean)
         # atmr: used for atm->runoff remapping (to find land)
+        if truncation_type == 'cubic-octahedral':
+            lpjg_oasis_name = 'TCO' + str(NN-1) + '-land'
+        elif truncation_type == 'linear':
+            lpjg_oasis_name = 'TL' + str(NN*2-1) + '-land'
 
-        for grids_name in ('{}{:03}'.format(s, int(NN)) for s in ('A', 'L', 'R')):
-
-            # OASIS requires certain names for the dimensions etc
+        for grids_name in (
+            '{}{:03}'.format(s, int(NN)) if s in ('A', 'L', 'R') else s
+            for s in ('A', 'L', 'R', lpjg_oasis_name)
+        ):
             print(' Write lons, lats, corner points for grid: %s ' % (grids_name,), '(T%s)' % (res_num,))
+
             xname = 'x_%s' % (grids_name,)
             yname = 'y_%s' % (grids_name,)
             lonname = '%s.lon' % (grids_name,)
@@ -665,7 +675,7 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
             id_lat.units = 'degrees_north'
             id_lat.standard_name = 'Latitude'
 
-         # Write corner points to grids file
+        # Write corner points to grids file
             if filebase == 'grids':
                 crnname = 'crn_%s' % (grids_name,)
                 cloname = '%s.clo' % (grids_name,)
@@ -674,19 +684,19 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_clo = nc.createVariable(cloname, 'float64', (crnname, yname, xname))
                 id_cla = nc.createVariable(claname, 'float64', (crnname, yname, xname))
 
-         # Write land-sea masks to masks file
+        # Write land-sea masks to masks file
             elif filebase == 'masks':
                 mskname = '%s.msk' % (grids_name,)
                 id_msk = nc.createVariable(mskname, 'int32', (yname, xname))
-                id_msk.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
+                id_msk.coordinates = '%s.lat %s.lon' % (grids_name, grids_name)
                 id_msk.valid_min = 0.
                 id_msk.valid_max = 1
 
-         # Write grid cell area to areas file
+        # Write grid cell area to areas file
             elif filebase == 'areas':
                 areaname = '%s.srf' % (grids_name,)
                 id_area = nc.createVariable(areaname, 'float64', (yname, xname))
-                id_area.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
+                id_area.coordinates = '%s.lat %s.lon' % (grids_name, grids_name)
 
             id_lon[:, :] = center_lons[:, :]
             id_lat[:, :] = center_lats[:, :]
@@ -704,8 +714,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_cla.valid_max = crn_lats.max()
 
             elif filebase == 'masks':
-                if grids_name.startswith('A') :
-                    id_msk[:, :] = np.round(lsm_binary_a[:, :])  
+                if grids_name.startswith('A'):
+                    id_msk[:, :] = np.round(lsm_binary_a[:, :])
                 elif grids_name.startswith('L'):
                     id_msk[:, :] = np.round(lsm_binary_l[:, :])
                 elif grids_name.startswith('R'):
@@ -713,6 +723,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                         id_msk[:, :] = np.abs(np.round(lsm_binary_r[:, :] - 1))
                     else:
                         id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
+                elif '-land' in grids_name and ('TCO' in grids_name or 'TL' in grids_name):
+                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
@@ -721,10 +733,10 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_area.valid_min = gridcell_area.min()
                 id_area.valid_max = gridcell_area.max()
 
-
         # Copying runoff mapper grids and areas into oasis3-mct files
 
         input_file_rnf = '%srunoff_%s.nc' % (input_path_runoff, filebase)
+        print(' Adding '+input_file_rnf+' to oasis files')
         rnffile = Dataset(input_file_rnf, 'r')
 
         nc.setncatts(rnffile.__dict__)
@@ -741,6 +753,88 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
         print(' Wrote %s ' % (filename,))
 
         print(longline)
+
+    # Step 1: Read input files
+    print("Read input files")
+    vegin_grid = xr.open_dataset(f"{input_path_lpjg}/vegin_grid.nc")
+    vegin = xr.open_dataset(f"{input_path_lpjg}/vegin.nc")
+
+    # Extract source grid and data
+    print("Extract source grid and data")
+    src_lon = np.squeeze(vegin_grid["A128.lon"].values)
+    src_lat = np.squeeze(vegin_grid["A128.lat"].values)
+    variables_to_interpolate = list(vegin.data_vars)
+
+    # Prepare target grid
+    print("Prepare target grid")
+    target_lon = np.squeeze(center_lons)
+    target_lat = np.squeeze(center_lats)
+
+    # Create a KDTree for nearest-neighbor interpolation
+    print("Create a KDTree for nearest-neighbor interpolation")
+    src_points = np.column_stack((src_lon, src_lat))
+    target_points = np.column_stack((target_lon, target_lat))
+    tree = cKDTree(src_points)
+    _, idx = tree.query(target_points)
+
+    # Step 2: Create a new dataset based on the original
+    print("Creating interpolated dataset")
+    interpolated_ds = vegin.copy()
+
+    # Adjust the dimensions to match the new grid size
+    print("Adjusting dimensions...")
+    for dim_name, dim_size in interpolated_ds.dims.items():
+        if dim_size == len(src_lon):  # Replace source grid size with target grid size
+            print(f"Updating dimension: {dim_name} from {dim_size} to {len(target_lon)}")
+            interpolated_ds = interpolated_ds.rename_dims({dim_name: f"{dim_name}_old"})
+            interpolated_ds = interpolated_ds.assign_coords({f"{dim_name}_old": np.arange(dim_size)})
+            interpolated_ds = interpolated_ds.assign_coords({dim_name: np.arange(len(target_lon))})
+
+    # Interpolate variables
+    print("Interpolating variables...")
+    for var in variables_to_interpolate:
+        try:
+            src_data = vegin[var].values.squeeze()
+
+            # Handle variables that should retain original dimensions
+            original_dims = vegin[var].dims
+            if len(original_dims) == 1 and original_dims[0].endswith("_ncnt"):
+                print(f"Skipping interpolation for {var} (retaining original dimension)")
+                continue
+
+            # Handle single-value variables
+            if src_data.size == 1:
+                print(f"Variable {var} has a single value; replicating across the grid.")
+                interpolated = np.full(target_lon.shape, src_data.item())
+                interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+                continue
+
+            # Check size alignment
+            if src_data.size != src_points.shape[0]:
+                print(f"Skipping variable {var} due to size mismatch.")
+                continue
+
+            # Perform interpolation
+            src_data_flat = src_data.ravel()
+            interpolated = src_data_flat[idx].reshape(target_lon.shape)
+            interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+            print(f"Updated variable: {var}")
+        except Exception as e:
+            print(f"Error interpolating variable {var}: {e}")
+
+    # Save the modified dataset
+    print("Saving interpolated dataset")
+
+    if truncation_type == 'cubic-octahedral':
+        vegin_name = 'vegin_TCO' + str(NN-1) + '.nc'
+    elif truncation_type == 'linear':
+        vegin_name = 'vegin_TL' + str(NN*2-1) + '.nc'
+
+    interpolated_ds.to_netcdf(f"{output_path_lpjg}/"+vegin_name, mode="w")
+
+    print(f"Interpolated data successfully saved to {output_path_lpjg}/"+vegin_name)
+
+
 
 
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
@@ -1027,14 +1121,14 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [159]
+    resolution_list = [255]
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'abis' #default for cubic-octahedral
+    exp_name_oifs = 'abl7' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
@@ -1045,7 +1139,6 @@ if __name__ == '__main__':
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r3600x1801'
-    #interp_res = 'r90x46'
     root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
@@ -1055,6 +1148,7 @@ if __name__ == '__main__':
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
     input_path_oifs = root_dir+'input/openifs_input_default/'
     input_path_runoff = root_dir+'input/runoff_map_default/'
+    input_path_lpjg = root_dir+'input/lpj-guess/'
 
     # Output file directories.
     output_path_oifs = root_dir+'output/openifs_input_modified/'
@@ -1097,7 +1191,7 @@ if __name__ == '__main__':
                                  gridcell_area, verbose=verbose)
 
         write_oasis_files(res_num,
-                          output_path_oasis, grid_name_oce,
+                          output_path_oasis, grid_name_oce, input_path_lpjg, output_path_lpjg,
                           center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
                           lsm_binary_a, lsm_binary_l, lsm_binary_r, NN, input_path_runoff,verbose=verbose)
         
