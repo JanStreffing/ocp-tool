@@ -680,6 +680,26 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
                 id_area.valid_min = gridcell_area.min()
                 id_area.valid_max = gridcell_area.max()
 
+        # Copying runoff mapper grids and areas into oasis3-mct files
+
+        input_file_rnf = '%srunoff_%s.nc' % (input_path_runoff, filebase)
+        print(' Adding '+input_file_rnf+' to oasis files')
+        rnffile = Dataset(input_file_rnf, 'r')
+
+        nc.setncatts(rnffile.__dict__)
+        for name, dimension in rnffile.dimensions.items():
+            nc.createDimension(name, len(dimension) if not dimension.isunlimited() else None)
+
+        for name, variable in rnffile.variables.items():
+            var_out = nc.createVariable(name, variable.datatype, variable.dimensions)
+            var_out.setncatts({k: variable.getncattr(k) for k in variable.ncattrs()})
+            var_out[:] = variable[:]
+
+        rnffile.close()
+        nc.close()
+        print(' Wrote %s ' % (filename,))
+
+        print(longline)
 
     # Step 1: Read input files
     print("Read input files")
@@ -762,25 +782,6 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
     print(f"Interpolated data successfully saved to {output_path_lpjg}/"+vegin_name)
 
 
-    # Copying runoff mapper grids and areas into oasis3-mct files
-
-    input_file_rnf = '%srunoff_%s.nc' % (input_path_runoff, filebase)
-    rnffile = Dataset(input_file_rnf, 'r')
-
-    nc.setncatts(rnffile.__dict__)
-    for name, dimension in rnffile.dimensions.items():
-        nc.createDimension(name, len(dimension) if not dimension.isunlimited() else None)
-
-    for name, variable in rnffile.variables.items():
-        var_out = nc.createVariable(name, variable.datatype, variable.dimensions)
-        var_out.setncatts({k: variable.getncattr(k) for k in variable.ncattrs()})
-        var_out[:] = variable[:]
-
-    rnffile.close()
-    nc.close()
-    print(' Wrote %s ' % (filename,))
-
-    print(longline)
 
 
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
@@ -1058,14 +1059,14 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [159]
+    resolution_list = [255]
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'abis' #default for cubic-octahedral
+    exp_name_oifs = 'abl7' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
@@ -1076,7 +1077,7 @@ if __name__ == '__main__':
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r3600x1801'
-    interp_res = 'r180x90'
+    #interp_res = 'r180x90'
     root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
