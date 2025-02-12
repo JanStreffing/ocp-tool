@@ -431,6 +431,7 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     list of numpy arrays. It also filters out additional timesteps of the 'lsm'
     parameter.
     '''
+
     print(longline)
     print(' Opening Grib input file: %s ' % (input_path_oifs,))
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
@@ -442,7 +443,8 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
 
     with open(input_file_oifs, 'rb') as f:
         keys = ['N', 'shortName']
-
+        if verbose:
+            print('num_fields'+str(num_fields))
         for i in range(num_fields):
             gid[i] = gribapi.grib_new_from_file(f)
             if gid[i] is None:
@@ -455,20 +457,10 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
                     print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
 
             shortName = gribapi.grib_get(gid[i], 'shortName')
-
-            if shortName == 'lsm' and not lsm_saved:
+            if shortName == 'lsm':
                 lsm_id = i
-                lsm_saved = True  # Set the flag to True after saving the first 'lsm' timestep
-                values = gribapi.grib_get_values(gid[i])
-                if verbose:
-                    print(f"Shape of 'lsm' values for the first timestep: {np.shape(values)}")
-                gribfield[i] = values
-            elif shortName == 'lsm' and lsm_saved:
-                if verbose:
-                    print(f"Skipping duplicate lsm fields")
-                num_fields=num_fields-1
-                gribfield[i] = None  # Skip subsequent 'lsm' timesteps by setting them to None
-
+                num_timesteps = gribapi.grib_get(gid[i], 'numberOfDataPoints')
+                print('number of lsm timesteps: '+str(num_timesteps))
             if shortName == 'slt':
                 slt_id = i
             if shortName == 'cl':
@@ -484,13 +476,14 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
     # Filter out None values from gribfield
     gribfield = [field for field in gribfield if field is not None]
     print(longline)
+    print('Shape of Gribfield:'+str(np.shape(gribfield)))
 
     return (gribfield, lsm_id, slt_id, cl_id, gid, num_fields)
 
 
 
-def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
-              grid_name_oce, num_fields, gid,verbose=False):
+def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, output_path_lpjg,
+              grid_name_oce, num_fields, gid, lsm_id, lsm_lat, lsm_lon, res_num, truncation_type, verbose=False):
     '''
     This function copies the input gribfile to the output folder and modifies
     it by writing the whole gribfield_mod, including the altered land sea mask
@@ -501,11 +494,71 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
     output_file_oifs = output_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT_' + grid_name_oce
     copy2(input_file_oifs, output_file_oifs)
 
+    # Step 1: Open the GRIB file in read mode and read existing messages
+    with open(output_file_oifs, 'rb') as f:
+        # Initialize a list to store (gid, dataDate) tuples for 'lsm' fields
+        lsm_datadates = []
+
+        # Iterate through the GRIB messages
+        while True:
+            gidi = gribapi.grib_new_from_file(f)
+            if gidi is None:
+                break  # No more messages
+
+            # Check if the field is 'lsm'
+            shortName = gribapi.grib_get(gidi, 'shortName')
+            if shortName == 'lsm':
+                # Read and store the dataDate for 'lsm'
+                data_date = gribapi.grib_get(gidi, 'dataDate')
+                lsm_datadates.append((gidi, data_date))  # Store handle with dataDate
+
+        print('lsm_datadates:', lsm_datadates)  # Print the extracted dataDate values
+
+    # Step 2: Open the GRIB file in write mode and overwrite 'lsm' data with correct dates
     with open(output_file_oifs, 'r+b') as f:
+        # Initialize an index for gribfield_mod to track which field we are using
+        lsm_index = 0
+
+        # Process each 'lsm' entry separately
+        for gidi, data_date in lsm_datadates:
+            print('Overwriting lsm for date:', data_date)
+
+            # Ensure the index is within the range of gribfield_mod
+            if lsm_index < len(gribfield_mod):
+                # Set the values for the 'lsm' field using the correct index
+                gribapi.grib_set_values(gidi, gribfield_mod[lsm_id].flatten())
+
+                # Set the correct dataDate
+                gribapi.grib_set(gidi, 'dataDate', data_date)  # Use the stored dataDate
+
+                # Write the message for the current dataDate
+                gribapi.grib_write(gidi, f)
+
+                # Increment the index for the next 'lsm' field
+                lsm_index += 1
+            else:
+                print(f"Error: Index {lsm_index} out of range for gribfield_mod.")
+
+            # Release handle after writing
+            gribapi.grib_release(gidi)
+
+        # Handle non-lsm fields separately
         for i in range(num_fields):
-            gribapi.grib_set_values(gid[i], gribfield_mod[i])
-            gribapi.grib_write(gid[i], f)
+            shortName = gribapi.grib_get(gid[i], 'shortName')
+            if shortName != 'lsm':
+                gribapi.grib_set_values(gid[i], gribfield_mod[i])
+                gribapi.grib_write(gid[i], f)
             gribapi.grib_release(gid[i])
+
+    # Write LPJ-Guess gridlist file
+    if truncation_type == 'linear':
+        gridlist_name = 'gridlist_TL'+str(res_num)+'_'+grid_name_oce+'.txt'
+    elif truncation_type == 'cubic-octahedral':
+        gridlist_name = 'gridlist_TCO'+str(res_num)+'_'+grid_name_oce+'.txt'
+    with open(output_path_lpjg+gridlist_name, "w") as file:
+        # Write coordinates in the format "lat lon"
+        for lat, lon in zip(lsm_lat, lsm_lon):
+            file.write(f"{lat} {lon}\n")
 
 
 def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=False):
@@ -543,8 +596,8 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
     return (center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN)
 
 
-def process_lsm(res_num, input_path_oifs, output_path_oifs,
-                                 exp_name_oifs, grid_name_oce, num_fields,
+def process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
+                                 exp_name_oifs, output_path_lpjg, grid_name_oce, num_fields,
                                  fesom_grid_sorted, lons_list,
                                  center_lats, center_lons,crn_lats, crn_lons, 
                                  gridcell_area,verbose=False):
@@ -557,15 +610,15 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs,
     gribfield, lsm_id, slt_id, cl_id, gid, num_fields = read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields,verbose=verbose)
-    lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
+    lsm_lat, lsm_lon, lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
                                                            fesom_grid_sorted, 
                                                            lsm_id, slt_id, cl_id, 
                                                            lons_list, center_lats, 
                                                            center_lons, crn_lats, crn_lons, 
                                                            gridcell_area,
                                                            verbose=verbose)
-    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
-              grid_name_oce, num_fields, gid,verbose=verbose)
+    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, output_path_lpjg,
+              grid_name_oce, num_fields, gid, lsm_id, lsm_lat, lsm_lon, res_num, truncation_type, verbose=verbose)
     return (lsm_binary_a,lsm_binary_l,lsm_binary_r,gribfield_mod)
 
 
@@ -1030,8 +1083,8 @@ def modify_lsm(gribfield, fesom_grid_sorted, lsm_id, slt_id, cl_id, lons_list,
     for i in np.arange (0, len(gribfield_mod[slt_id])-1):
         if gribfield_mod[lsm_id][i] <= 0.5 and fesom_grid_sorted[i] >= .99:
             gribfield_mod[slt_id][i] = 6
-            gribfield_mod[lsm_id][i] = 1 
-            
+            gribfield_mod[lsm_id][i] = 1
+
     for i in np.arange (0, len(gribfield_mod[slt_id])-1):
         if gribfield_mod[lsm_id][i] >= 0.5 and fesom_grid_sorted[i] < .99:
             gribfield_mod[slt_id][i] = 0
@@ -1041,7 +1094,16 @@ def modify_lsm(gribfield, fesom_grid_sorted, lsm_id, slt_id, cl_id, lons_list,
     lsm_binary_a = gribfield_mod[lsm_id]
     lsm_binary_a = lsm_binary_a[np.newaxis, :]
 
-    return (lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
+    # Generate list of new OpenIFS land points for LPJ-Guess
+    lsm_lat=[]
+    lsm_lon=[]
+    for i in np.arange (0, len(gribfield_mod[slt_id])-1):
+        if gribfield_mod[lsm_id][i] >= 0.5:
+            lsm_lat.append(center_lats[0,i])
+            lsm_lon.append(center_lons[0,i])
+    print('Number of land points: '+str(len(lsm_lat)))
+
+    return (lsm_lat, lsm_lon, lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
 
 
 
@@ -1077,7 +1139,6 @@ if __name__ == '__main__':
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r3600x1801'
-    #interp_res = 'r180x90'
     root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
@@ -1094,8 +1155,6 @@ if __name__ == '__main__':
     output_path_runoff = root_dir+'output/runoff_map_modified/'
     output_path_oasis = root_dir+'output/oasis_mct3_input/'
     output_path_lpjg = root_dir+'output/lpj-guess/'
-    
-    
     
     
     
@@ -1125,8 +1184,8 @@ if __name__ == '__main__':
                                           cavity=cavity, force_overwrite_griddes=force_overwrite_griddes, 
                                           verbose=verbose)
         
-        lsm_binary_a,lsm_binary_l,lsm_binary_r, gribfield_mod = process_lsm(res_num, input_path_oifs, output_path_oifs,
-                                 exp_name_oifs, grid_name_oce, num_fields,
+        lsm_binary_a,lsm_binary_l,lsm_binary_r, gribfield_mod = process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
+                                 exp_name_oifs, output_path_lpjg, grid_name_oce, num_fields,
                                  fesom_grid_sorted, lons_list,
                                  center_lats, center_lons, crn_lats, crn_lons, 
                                  gridcell_area, verbose=verbose)
