@@ -861,14 +861,14 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
     lats = rnffile.variables[u'lat'][:]
 
     for basin in manual_basin_removal:
-
+        basin_offset_greenland=7
         if basin == 'caspian-sea':
             for lo, lon in enumerate(lons):
                 if lon > 46 and lon < 56:
                     for la, lat in enumerate(lats):
                         if lat > 36 and lat < 47:
                             if drainage[la, lo] == -2:
-                                drainage[la, lo] = 18
+                                drainage[la, lo] = 18+basin_offset_greenland
                                 arrival[la, lo] = -1
                 # adding artifical arrival points in the amazon discharge area
                 # to close the global water budget
@@ -876,7 +876,7 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                     for la, lat in enumerate(lats):
                         if lat > 1 and lat < 2:
                             if arrival[la, lo] != -1:
-                                arrival[la, lo] = 18
+                                arrival[la, lo] = 18+basin_offset_greenland
 
         if basin == 'black-sea':
             for lo, lon in enumerate(lons):
@@ -885,19 +885,19 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                     for la, lat in enumerate(lats):
                         if lat > 40.5 and lat < 48:
                             if drainage[la, lo] == -2:
-                                drainage[la, lo] = 23
+                                drainage[la, lo] = 23+basin_offset_greenland
                                 arrival[la, lo] = -1
                 # adding new arrival points
                 if lon > 25 and lon < 26.5:
                     for la, lat in enumerate(lats):
                         if lat > 38.5 and lat < 41:
                             if arrival[la, lo] != -1:
-                                arrival[la, lo] = 23
+                                arrival[la, lo] = 23+basin_offset_greenland
                 if lon > 23.5 and lon < 25:
                     for la, lat in enumerate(lats):
                         if lat > 38.5 and lat < 41:
                             if arrival[la, lo] != -1:
-                                arrival[la, lo] = 28
+                                arrival[la, lo] = 28+basin_offset_greenland
 
     # Fix for Ob arrival
     for lo, lon in enumerate(lons):
@@ -905,14 +905,14 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
         if lon > 60 and lon < 70:
             for la, lat in enumerate(lats):
                 if lat > 60 and lat < 80:
-                    if arrival[la, lo] == 13:
-                        arrival[la, lo] = 6
+                    if arrival[la, lo] == 13+basin_offset_greenland:
+                        arrival[la, lo] = 6+basin_offset_greenland
         # adding new arrival points
         if lon > 72 and lon < 75:
             for la, lat in enumerate(lats):
                 if lat > 65 and lat < 75:
-                    if arrival[la, lo] == 6:
-                        arrival[la, lo] = 13
+                    if arrival[la, lo] == 6+basin_offset_greenland:
+                        arrival[la, lo] = 13+basin_offset_greenland
 
     # Fix for Glacial calving maps
     # Antarctica
@@ -946,77 +946,6 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                     if calving[la, lo] == -2:
                         calving[la, lo] = 66
                         
-        # Adding 10 new boxes for iceberg drift around Antarctica
-        
-        # Box 1: Eastern Weddell Sea (following the Antarctic Coastal Current)
-        if lon > 0 and lon < 20:
-            for la, lat in enumerate(lats):
-                if lat > -72 and lat < -65:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-                        
-        # Box 2: Northwestern Weddell Sea (major iceberg drift path)
-        if lon > 320 and lon < 340:
-            for la, lat in enumerate(lats):
-                if lat > -65 and lat < -58:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-        
-        # Box 3: Ross Sea region
-        if lon > 180 and lon < 210:
-            for la, lat in enumerate(lats):
-                if lat > -75 and lat < -65:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-        
-        # Box 4: Amundsen Sea (significant calving region)
-        if lon > 230 and lon < 260:
-            for la, lat in enumerate(lats):
-                if lat > -72 and lat < -65:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-        
-        # Box 5: Bellingshausen Sea (known iceberg path)
-        if lon > 270 and lon < 290:
-            for la, lat in enumerate(lats):
-                if lat > -70 and lat < -62:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-        
-        # Box 6: Antarctic Peninsula eastern drift route
-        if lon > 300 and lon < 310:
-            for la, lat in enumerate(lats):
-                if lat > -65 and lat < -55:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-        
-        # Box 7: Cosmonaut Sea (following the eastern Antarctic drift)
-        if lon > 40 and lon < 60:
-            for la, lat in enumerate(lats):
-                if lat > -65 and lat < -60:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-        
-        # Box 8: Prydz Bay & Davis Sea region
-        if lon > 70 and lon < 90:
-            for la, lat in enumerate(lats):
-                if lat > -67 and lat < -62:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-        
-        # Box 9: Wilkes Land coast (known for large glacier tongues)
-        if lon > 110 and lon < 130:
-            for la, lat in enumerate(lats):
-                if lat > -68 and lat < -63:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
-        
-        # Box 10: Offshore drift path in eastern Antarctic region
-        if lon > 140 and lon < 160:
-            for la, lat in enumerate(lats):
-                if lat > -65 and lat < -58:
-                    if calving[la, lo] == -2:
-                        calving[la, lo] = 66
     # Greenland
     for lo, lon in enumerate(lons):
         # adding new calving points
