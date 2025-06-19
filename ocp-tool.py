@@ -53,7 +53,8 @@ import math
 import xarray as xr
 import shutil
 from pathlib import Path
-
+import subprocess
+import datetime
 
 import pyfesom2 as pf
 from tqdm import tqdm
@@ -482,6 +483,58 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
 
 
 
+def add_albedo_fields(input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, res_num, input_path_reduced_grid, truncation_type, ifs_grid=None, verbose=False):
+    '''
+    This function adds bare_soil_albedo fields to the ICMGG file
+    It remaps the albedo fields to the target grid before appending to the ICMGG file
+    Uses CDO (Climate Data Operators) for remapping
+    '''
+    # Setup paths and files
+    albedo_file = f"{input_path_oifs}/bare_soil_albedos.grb"
+    output_file_oifs = f"{output_path_oifs}ICMGG{exp_name_oifs}INIT_{grid_name_oce}"
+    temp_file = f"{output_path_oifs}tmp_albedo_remapped.grb"
+    
+    # Check if files exist
+    if not os.path.exists(albedo_file):
+        print(f"Warning: Albedo file not found: {albedo_file}")
+        return False
+    
+    if not os.path.exists(output_file_oifs):
+        print(f"Error: Output ICMGG file not found: {output_file_oifs}")
+        return False
+    
+    print(f"\nAdding bare soil albedo fields to {output_file_oifs}")
+    
+    try:
+        print(f"Remapping albedo fields to match {output_file_oifs} grid")
+        os.system(f"grib_copy -w edition=2 {output_file_oifs} {output_file_oifs}.grib2")
+        os.system(f"cdo griddes {output_file_oifs}.grib2 > griddes.txt")
+        os.system(f"cdo remapnn,griddes.txt {albedo_file} {temp_file}")
+        
+        # Step 3: Append the remapped albedo file to the output ICMGG file
+        if os.path.exists(temp_file):
+            print("Appending remapped albedo fields to ICMGG file")
+            with open(temp_file, 'rb') as src, open(output_file_oifs, 'ab') as dst:
+                dst.write(src.read())
+            
+            # Clean up temporary files
+            os.remove(temp_file)
+            os.remove("griddes.txt")
+            os.remove(f"{output_file_oifs}.grib2")
+            
+            print("Successfully remapped and added albedo fields to ICMGG file")
+            return True
+        else:
+            print(f"Error: Remapping failed, temporary file {temp_file} not created")
+            return False
+            
+    except Exception as e:
+        print(f"Unexpected error adding albedo fields: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, output_path_lpjg,
               grid_name_oce, num_fields, gid, lsm_id, lsm_lat, lsm_lon, res_num, truncation_type, verbose=False):
     '''
@@ -624,7 +677,7 @@ def process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
 
 def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg, output_path_lpjg, 
                       center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a, 
-                      lsm_binary_l , lsm_binary_r, NN, input_path_runoff,verbose=False):
+                      lsm_binary_l , lsm_binary_r, NN, input_path_runoff, input_path_oifs=None, output_path_oifs=None, exp_name_oifs=None, verbose=False):
     '''
     This function writes the binary masks, areas and grids files for
     oasis3-mct
@@ -834,7 +887,10 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
 
     print(f"Interpolated data successfully saved to {output_path_lpjg}/"+vegin_name)
 
-
+    # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
+    ifs_grid = f"TCO{res_num}" if truncation_type == "cubic-octahedral" else f"TL{res_num}"
+    # Use a default date of 19900101
+    add_albedo_fields(input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, res_num, input_path_reduced_grid, truncation_type, ifs_grid)
 
 
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
@@ -1197,7 +1253,7 @@ if __name__ == '__main__':
             fesom_grid_sorted = read_fesom_grid(input_path_oce ,grid_name_oce, fesom_grid_file_path ,interp_res, 
                                               cavity=cavity, force_overwrite_griddes=force_overwrite_griddes, 
                                               verbose=verbose)
-        else:
+        if grid_name_oce == 'AMIP':
             print(' Skipped reading FESOM mesh, because we are in AMIP mode')
             fesom_grid_sorted = []
 
@@ -1206,10 +1262,29 @@ if __name__ == '__main__':
                                      fesom_grid_sorted, lons_list,
                                      center_lats, center_lons, crn_lats, crn_lons, 
                                      gridcell_area, verbose=verbose)
-        write_oasis_files(res_num,
-                          output_path_oasis, grid_name_oce, input_path_lpjg, output_path_lpjg,
-                          center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
-                          lsm_binary_a, lsm_binary_l, lsm_binary_r, NN, input_path_runoff,verbose=verbose)
+        write_oasis_files_args = {
+            'res_num': res_num,
+            'output_path_oasis': output_path_oasis,
+            'grid_name_oce': grid_name_oce,
+            'input_path_lpjg': input_path_lpjg,
+            'output_path_lpjg': output_path_lpjg,
+            'center_lats': center_lats,
+            'center_lons': center_lons,
+            'crn_lats': crn_lats,
+            'crn_lons': crn_lons,
+            'gridcell_area': gridcell_area,
+            'lsm_binary_a': lsm_binary_a,
+            'lsm_binary_l': lsm_binary_l,
+            'lsm_binary_r': lsm_binary_r,
+            'NN': NN,
+            'input_path_runoff': input_path_runoff,
+            'input_path_oifs': input_path_oifs,
+            'output_path_oifs': output_path_oifs,
+            'exp_name_oifs': exp_name_oifs,
+            'verbose': verbose
+        }
+        
+        write_oasis_files(**write_oasis_files_args)
         
         plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=verbose)
         
