@@ -1147,22 +1147,33 @@ if __name__ == '__main__':
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r360x181'
-    root_dir = '/work/ab0246/a270092/software/ocp-tool/'
+    # Determine the root directory automatically based on script location
+    script_path = os.path.abspath(__file__)
+    root_dir = os.path.dirname(script_path) + '/'
     # Construct the relative path based on the script/notebook's location
-    input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/core2_griddes_nodes.nc'
+    input_path_oce = os.path.join(root_dir, 'input', 'fesom_mesh') + os.sep
+    # Look for FESOM grid file in the input directory
+    fesom_grid_file_path = os.path.join(root_dir, 'input/fesom_mesh/core2_griddes_nodes.nc')
+    
+    # Check if the grid file exists
+    if not os.path.isfile(fesom_grid_file_path):
+        print(f"ERROR: Required FESOM grid file not found at {fesom_grid_file_path}")
+        print("To run this tool, you'll need to obtain the CORE2 grid file for FESOM.")
+        print("Check the documentation for instructions on setting up the required input files.")
+        print("You can also use the prep_fesom.sh script in the input/fesom_mesh directory if available.")
+        sys.exit(1)
     force_overwrite_griddes = False
     
-    input_path_full_grid = root_dir+'input/gaussian_grids_full/'
-    input_path_oifs = root_dir+'input/openifs_input_default/'
-    input_path_runoff = root_dir+'input/runoff_map_default/'
-    input_path_lpjg = root_dir+'input/lpj-guess/'
+    input_path_full_grid = os.path.join(root_dir, 'input', 'gaussian_grids_full') + os.sep
+    input_path_oifs = os.path.join(root_dir, 'input', 'openifs_input_default') + os.sep
+    input_path_runoff = os.path.join(root_dir, 'input', 'runoff_map_default') + os.sep
+    input_path_lpjg = os.path.join(root_dir, 'input', 'lpj-guess') + os.sep
 
     # Output file directories.
-    output_path_oifs = root_dir+'output/openifs_input_modified/'
-    output_path_runoff = root_dir+'output/runoff_map_modified/'
-    output_path_oasis = root_dir+'output/oasis_mct3_input/'
-    output_path_lpjg = root_dir+'output/lpj-guess/'
+    output_path_oifs = os.path.join(root_dir, 'output', 'openifs_input_modified') + os.sep
+    output_path_runoff = os.path.join(root_dir, 'output', 'runoff_map_modified') + os.sep
+    output_path_oasis = os.path.join(root_dir, 'output', 'oasis_mct3_input') + os.sep
+    output_path_lpjg = os.path.join(root_dir, 'output', 'lpj-guess') + os.sep
     
     if grid_name_oce == 'CORE2':
         manual_basin_removal=['caspian-sea', 'black-sea']
