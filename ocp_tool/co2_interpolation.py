@@ -611,10 +611,15 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         traceback.print_exc()
         return None
     
-    # Step 4: Write the interpolated CO2 data to a new GRIB file
+    # Step 4: Write (or overwrite) the interpolated CO2 data to a GRIB file
     if output_file is None:
-        base, ext = os.path.splitext(icmgg_iniua_file)
-        output_file = f"{base}_with_co2{ext}"
+        output_file = icmgg_iniua_file  # use same name by default to keep pattern
+
+    # Validate filename pattern (ICMGG????INIUA)
+    import re, os as _os
+    _basename = _os.path.basename(output_file)
+    if not re.match(r"^ICMGG\w{4}INIUA$", _basename):
+        raise ValueError(f"Output filename '{_basename}' must match pattern ICMGG????INIUA")
     
     try:
         print(f"Writing interpolated CO2 data to {output_file}...")
@@ -622,8 +627,12 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         def write_output_grib(output_file, icmgg_file, interpolated_co2_3d, level_data):
             """Write the interpolated CO2 data to a GRIB file"""
             try:
-                # Copy the ICMGG file to the output file
-                shutil.copy2(icmgg_file, output_file)
+                # If output file differs from input, start by copying original content
+                if icmgg_file != output_file:
+                    shutil.copy2(icmgg_file, output_file)
+                    print(f"Copied template file to {output_file}")
+                else:
+                    print("Appending CO2 messages directly to existing ICMGG file")
                 
                 # First, get a template message for each level from the ICMGG file
                 template_gids = {}
@@ -676,67 +685,57 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
                         template_level = level if level in template_gids else list(template_gids.keys())[0]
                         template_gid = template_gids[template_level]
                         
-                        # Clone the template
-                        gid = eccodes.codes_clone(template_gid)
-                            
-                        # Create a completely new message for CO2 to avoid eccodes parameter database mapping
+                        # Instead of cloning the template, create a completely new message from scratch
                         if verbose:
                             print(f"Level {level}: Creating new CO2 message from scratch...")
                         
                         try:
-                            # Get the sample code for a new grib message (similar to grib_copy example)
-                            # Get original data values and key attributes we need to preserve
-                            original_values = eccodes.codes_get_values(gid)  # Store original data values
+                            # Create a brand-new GRIB2 message from ECMWF sample. We use reduced gaussian grid with pressure levels
+                            # because it already contains nearly all geometry keys. We will overwrite the geometry with our template values.
+                            gid = eccodes.codes_grib_new_from_samples('reduced_gg_pl_grib2')
                             
-                            # Store essential keys for grid definition
-                            keys_to_preserve = [
-                                'gridType', 'gridDefinitionTemplateNumber', 'Ni', 'Nj',
-                                'iDirectionIncrementInDegrees', 'jDirectionIncrementInDegrees',
+                            # Copy grid-definition keys from template so that the new message is on exactly the same grid
+                            geometry_keys = [
+                                'gridType',
+                                'latitudeOfFirstGridPointInDegrees', 'longitudeOfFirstGridPointInDegrees',
+                                'latitudeOfLastGridPointInDegrees', 'longitudeOfLastGridPointInDegrees'
+                            ]
+                            for k in geometry_keys:
+                                try:
+                                    eccodes.codes_set(gid, k, eccodes.codes_get(template_gid, k))
+                                except Exception:
+                                    # Some keys (e.g. Ni/Nj) may not exist for reduced_gg, ignore quietly
+                                    pass
+                            
+                            # Get key attributes from the template for grid definition
+                            template_keys = [
+                                'gridType',
                                 'latitudeOfFirstGridPointInDegrees', 'longitudeOfFirstGridPointInDegrees',
                                 'latitudeOfLastGridPointInDegrees', 'longitudeOfLastGridPointInDegrees',
-                                'numberOfPointsAlongAParallel', 'numberOfPointsAlongAMeridian',
-                                'binaryScaleFactor', 'decimalScaleFactor', 'packingType',
-                                'referenceValue', 'bitsPerValue',
-                                'typeOfLevel', 'gridDefinitionDescription', 'resolutionAndComponentFlags',
-                                'dataRepresentationType', 'bitmapPresent'
+                                'pl',
+                                'packingType', 'bitmapPresent'
                             ]
-                            
-                            preserved_values = {}
-                            for key in keys_to_preserve:
+                            for key in template_keys:
+                                if key == 'pl':
+                                    # 'pl' already set above; avoid resetting to prevent eccodes size warnings
+                                    continue
                                 try:
-                                    preserved_values[key] = eccodes.codes_get(gid, key)
+                                    value = eccodes.codes_get(template_gid, key)
+                                    eccodes.codes_set(gid, key, value)
                                 except Exception:
                                     # Not all keys may exist in all templates
                                     pass
-                            
-                            # Don't try to unset paramId as it's causing errors
-                            # Instead, directly set the CO2 parameters without trying to clear first
-                                
-                            # Now set the CO2-specific metadata
-                            # Set with low-level keys rather than high-level ones
-                            eccodes.codes_set_long(gid, 'table2Version', 253)  # A table that works with co2
-                            eccodes.codes_set_long(gid, 'indicatorOfParameter', 162)  # Direct parameter code
-                            eccodes.codes_set_string(gid, 'shortName', 'co2')
-                            eccodes.codes_set_string(gid, 'name', 'Carbon Dioxide')
-                            eccodes.codes_set_string(gid, 'units', 'kg kg**-1')
-                            
-                            # Set level
-                            eccodes.codes_set_long(gid, 'level', level)
-                            
-                            # Read back to verify
-                            try:
-                                current_shortname = eccodes.codes_get(gid, 'shortName')
-                                if verbose:
-                                    print(f"Level {level}: Final shortName is '{current_shortname}'")
-                            except:
-                                if verbose:
-                                    print(f"Level {level}: Could not read back shortName")
-                                
+
+                            # Set CO2 metadata (setting paramId automatically defines shortName/name/units)
+                            eccodes.codes_set_long(gid, 'paramId', 210061)
+                            eccodes.codes_set_long(gid, 'centre', 98)
+                            eccodes.codes_set_string(gid, 'dataType', 'an')
                         except Exception as e:
                             if verbose:
-                                print(f"Level {level}: Error with custom CO2 message: {str(e)}")
+                                print(f"Level {level}: Error assembling CO2 message: {e}")
                             else:
-                                print(f"Error with CO2 metadata: {str(e)}")
+                                print(f"Error with CO2 metadata: {e}")
+                            continue  # skip this level if error occurred
                             
                         # Set level information
                         if level in level_templates:
@@ -807,7 +806,14 @@ def main():
     
     args = parser.parse_args()
     
-    output_file = args.output or f"{os.path.splitext(args.icmgg_iniua)[0]}_WITH_CO2{os.path.splitext(args.icmgg_iniua)[1]}"
+    # Determine output file path
+    output_file = args.output if args.output else args.icmgg_iniua
+
+    # Validate filename pattern (ICMGG????INIUA)
+    import re
+    basename = os.path.basename(output_file)
+    if not re.match(r"^ICMGG\w{4}INIUA$", basename):
+        raise ValueError(f"Output filename '{basename}' must match pattern ICMGG????INIUA")
     
     if args.dask:
         dask.config.set(scheduler='processes')
