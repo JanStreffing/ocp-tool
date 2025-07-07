@@ -594,159 +594,252 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         base, ext = os.path.splitext(icmgg_iniua_file)
         output_file = f"{base}_with_co2{ext}"
     
-    try:
-        print(f"Writing interpolated CO2 data to {output_file}...")
-        
-        def write_output_grib(output_file, icmgg_file, interpolated_co2_3d, level_data):
-            """Write the interpolated CO2 data to a GRIB file"""
-            try:
-                # Copy the ICMGG file to the output file
-                shutil.copy2(icmgg_file, output_file)
-                
-                # First, get a template message for each level from the ICMGG file
-                template_gids = {}
-                level_templates = {}
-                
-                # Read template messages for each level
+    print(f"Writing interpolated CO2 data to {output_file}...")
+    
+    def write_output_grib(output_file, icmgg_file, interpolated_co2_3d, level_data):
+        """Write the interpolated CO2 data to a GRIB file"""
+        try:
+            # First, get a template message for each level from the ICMGG file
+            template_gids = {}
+            level_templates = {}
+            original_messages = []
+            
+            # Read all messages from the original file
+            with open(icmgg_file, 'rb') as f:
+                while True:
+                    gid = eccodes.codes_grib_new_from_file(f)
+                    if gid is None:
+                        break
+                    
+                    # Save this message to be written to the output file
+                    original_messages.append(eccodes.codes_clone(gid))
+                    
+                    try:
+                        short_name = eccodes.codes_get(gid, 'shortName')
+                        if short_name == variable_name:
+                            level = eccodes.codes_get(gid, 'level')
+                            # We only need one template per level
+                            if level not in template_gids:
+                                template_gids[level] = eccodes.codes_clone(gid)
+                                level_templates[level] = {
+                                    'type_of_level': eccodes.codes_get(gid, 'typeOfLevel'),
+                                    'grid_type': eccodes.codes_get(gid, 'gridType')
+                                }
+                    except:
+                        pass
+                    
+                    eccodes.codes_release(gid)
+            
+            # If no templates were found, use the first message as fallback
+            if not template_gids:
                 with open(icmgg_file, 'rb') as f:
-                    while True:
-                        gid = eccodes.codes_grib_new_from_file(f)
-                        if gid is None:
-                            break
-                        
-                        try:
-                            short_name = eccodes.codes_get(gid, 'shortName')
-                            if short_name == variable_name:
-                                level = eccodes.codes_get(gid, 'level')
-                                # We only need one template per level
-                                if level not in template_gids:
-                                    template_gids[level] = eccodes.codes_clone(gid)
-                                    level_templates[level] = {
-                                        'type_of_level': eccodes.codes_get(gid, 'typeOfLevel'),
-                                        'grid_type': eccodes.codes_get(gid, 'gridType')
-                                    }
-                        except:
-                            pass
-                        
+                    gid = eccodes.codes_grib_new_from_file(f)
+                    if gid is not None:
+                        print("No level-specific templates found, using first message as template")
+                        template_gids[1] = eccodes.codes_clone(gid)
                         eccodes.codes_release(gid)
+                    else:
+                        print("Could not find any template message in the ICMGG file")
+                        return False
+            
+            print(f"Found {len(template_gids)} template messages for different levels")
+            
+            # Write to the new output file
+            with open(output_file, 'wb') as out_file:
+                # First, write all original messages
+                for i, gid in enumerate(original_messages):
+                    if verbose and i % 50 == 0:
+                        print(f"Writing original message {i+1}/{len(original_messages)}")
+                    eccodes.codes_write(gid, out_file)
                 
-                # If no templates were found, use the first message as fallback
-                if not template_gids:
-                    with open(icmgg_file, 'rb') as f:
-                        gid = eccodes.codes_grib_new_from_file(f)
-                        if gid is not None:
-                            print("No level-specific templates found, using first message as template")
-                            template_gids[1] = eccodes.codes_clone(gid)
-                            eccodes.codes_release(gid)
-                        else:
-                            print("Could not find any template message in the ICMGG file")
-                            return False
+                if verbose:
+                    print(f"Wrote {len(original_messages)} original messages to output file")
                 
-                print(f"Found {len(template_gids)} template messages for different levels")
-                
-                # Append the interpolated CO2 to the output file for each level
-                with open(output_file, 'ab') as out_file:
-                    # Process each level
-                    for level in sorted(interpolated_co2_3d.keys()):
-                        interpolated_co2 = interpolated_co2_3d[level]
-                        
-                        # Choose the best template for this level
-                        template_level = level if level in template_gids else list(template_gids.keys())[0]
-                        template_gid = template_gids[template_level]
-                        
-                        # Clone the template
-                        gid = eccodes.codes_clone(template_gid)
-                            
-                        # Create a completely new message for CO2 to avoid eccodes parameter database mapping
+                # Now append the interpolated CO2 for each level
+                # Find a CC template message to use as reference for metadata
+                cc_template_gid = None
+                for level, gid in template_gids.items():
+                    # Use the first cc message as our reference template
+                    cc_template_gid = gid
+                    if verbose:
+                        print(f"Using CC template from level {level} as reference for metadata")
+                    break
+                    
+                # Create a base GRIB2 template for CO2 messages
+                template_gid = None
+                try:
+                    # Create a new GRIB2 message from a suitable sample
+                    template_gid = eccodes.codes_grib_new_from_samples("regular_ll_pl_grib2")
+                    
+                    if template_gid is None:
                         if verbose:
-                            print(f"Level {level}: Creating new CO2 message from scratch...")
-                        # Get the sample code for a new grib message (similar to grib_copy example)
-                        # Get original data values and key attributes we need to preserve
-                        original_values = eccodes.codes_get_values(gid)  # Store original data values
+                            print("Failed to create template GRIB message")
+                        return False
                         
-                        # Store essential keys for grid definition
-                        keys_to_preserve = [
-                            'gridType', 'gridDefinitionTemplateNumber', 'Ni', 'Nj',
-                            'iDirectionIncrementInDegrees', 'jDirectionIncrementInDegrees',
-                            'latitudeOfFirstGridPointInDegrees', 'longitudeOfFirstGridPointInDegrees',
-                            'latitudeOfLastGridPointInDegrees', 'longitudeOfLastGridPointInDegrees',
-                            'numberOfPointsAlongAParallel', 'numberOfPointsAlongAMeridian',
-                            'binaryScaleFactor', 'decimalScaleFactor', 'packingType',
-                            'referenceValue', 'bitsPerValue',
-                            'typeOfLevel', 'gridDefinitionDescription', 'resolutionAndComponentFlags',
-                            'dataRepresentationType', 'bitmapPresent'
+                    if verbose:
+                        print(f"Created base GRIB2 template message")
+                        
+                    # Extract key metadata from CC template to apply to all CO2 messages
+                    if cc_template_gid:
+                        # Key metadata values to copy from cc template
+                        metadata_keys = [
+                            "gridType", "dataType", "date", "packingType",
+                            "centre", "generatingProcessIdentifier"
                         ]
                         
-                        preserved_values = {}
-                        for key in keys_to_preserve:
+                        metadata_values = {}
+                        for key in metadata_keys:
                             try:
-                                preserved_values[key] = eccodes.codes_get(gid, key)
-                            except Exception:
-                                # Not all keys may exist in all templates
-                                pass
+                                value = eccodes.codes_get(cc_template_gid, key)
+                                metadata_values[key] = value
+                                if verbose:
+                                    print(f"Extracted {key}={value} from CC template")
+                            except Exception as e:
+                                if verbose:
+                                    print(f"Could not extract {key} from CC template: {e}")
+                except Exception as e:
+                    if verbose:
+                        print(f"Error creating template GRIB message: {e}")
+                        import traceback
+                        print(f"Error details: {traceback.format_exc()}")
+                    return False
+                
+                # Process each level
+                co2_messages_written = 0
+                for level in sorted(interpolated_co2_3d.keys()):
+                    interpolated_co2 = interpolated_co2_3d[level]
+                    
+                    if verbose:
+                        print(f"Level {level}: Creating CO2 message...")
+                    
+                    try:
+                        # Clone the template for each level to preserve all metadata attributes
+                        gid = eccodes.codes_clone(template_gid)
                         
-                        # Don't try to unset paramId as it's causing errors
-                        # Instead, directly set the CO2 parameters without trying to clear first
-                            
-                        # Now set the CO2-specific metadata
-                        # Directly set the paramId as requested
-                        eccodes.codes_set_long(gid, 'paramId', 210061)  # Set explicit paramId for CO2
+                        # Apply extracted CC metadata values to ensure consistency
+                        if 'metadata_values' in locals() and metadata_values:
+                            for key, value in metadata_values.items():
+                                try:
+                                    if isinstance(value, (int, float)):
+                                        eccodes.codes_set_long(gid, key, int(value))
+                                    else:
+                                        eccodes.codes_set(gid, key, str(value))
+                                    if verbose:
+                                        print(f"Applied {key}={value} to CO2 message")
+                                except Exception as e:
+                                    if verbose:
+                                        print(f"Could not set {key}={value} on CO2 message: {e}")
                         
-                        # These may be overridden by eccodes based on paramId, but include them anyway
-                        eccodes.codes_set_string(gid, 'shortName', 'co2')
-                        eccodes.codes_set_string(gid, 'name', 'Carbon Dioxide')
-                        eccodes.codes_set_string(gid, 'units', 'kg kg**-1')
+                        # Set essential identification parameters for CO2
+                        eccodes.codes_set_long(gid, "discipline", 0)  # Meteorological products
+                        eccodes.codes_set_long(gid, "parameterCategory", 20)  # Mass mixing ratio (kg/kg)
+                        eccodes.codes_set_long(gid, "parameterNumber", 61)  # Carbon dioxide
+                        eccodes.codes_set_long(gid, "paramId", 210061)  # The specific CO2 paramId
+                        eccodes.codes_set(gid, "shortName", "co2")
                         
-                        # Set level
-                        eccodes.codes_set_long(gid, 'level', level)
-                        
-                        # Read back to verify
-                        try:
-                            current_shortname = eccodes.codes_get(gid, 'shortName')
-                            if verbose:
-                                print(f"Level {level}: Final shortName is '{current_shortname}'")
-                        except:
-                            if verbose:
-                                print(f"Level {level}: Could not read back shortName")
-                                
                         # Set level information
                         if level in level_templates:
                             type_of_level = level_templates[level]['type_of_level']
                         else:
                             type_of_level = 'hybrid'  # Default to hybrid level
                             
-                        eccodes.codes_set(gid, 'typeOfLevel', type_of_level)
-                        eccodes.codes_set(gid, 'level', level)
+                        eccodes.codes_set(gid, "typeOfLevel", type_of_level)
+                        eccodes.codes_set_long(gid, "level", level)
                         
-                        # Set the data values
-                        eccodes.codes_set_values(gid, interpolated_co2)
+                        # Handle grid settings based on the grid type
+                        grid_type = eccodes.codes_get(gid, "gridType")
                         
-                        # Write the message to the file
+                        if grid_type == "reduced_gg":
+                            # For reduced Gaussian grid, we need a different approach
+                            # Copy N (the number of parallels between a pole and the equator)
+                            # from the cc template
+                            if cc_template_gid:
+                                try:
+                                    n_value = eccodes.codes_get_long(cc_template_gid, "N")
+                                    eccodes.codes_set_long(gid, "N", n_value)
+                                    if verbose:
+                                        print(f"Set N={n_value} for reduced Gaussian grid")
+                                        
+                                    # Copy pl array (number of points along each parallel) if available
+                                    try:
+                                        pl_array = eccodes.codes_get_array(cc_template_gid, "pl")
+                                        eccodes.codes_set_array(gid, "pl", pl_array)
+                                        if verbose:
+                                            print(f"Copied pl array with length {len(pl_array)}")
+                                    except Exception as e:
+                                        if verbose:
+                                            print(f"Could not copy pl array: {e}")
+                                except Exception as e:
+                                    if verbose:
+                                        print(f"Could not get/set N value for Gaussian grid: {e}")
+                        else:
+                            # Regular lat/lon grid
+                            eccodes.codes_set_long(gid, "Ni", len(lons))
+                            eccodes.codes_set_long(gid, "Nj", len(lats))
+                            
+                            eccodes.codes_set_double(gid, "longitudeOfFirstGridPointInDegrees", lons[0])
+                            eccodes.codes_set_double(gid, "longitudeOfLastGridPointInDegrees", lons[-1])
+                            eccodes.codes_set_double(gid, "latitudeOfFirstGridPointInDegrees", lats[0])
+                            eccodes.codes_set_double(gid, "latitudeOfLastGridPointInDegrees", lats[-1])
+                            
+                            # Calculate grid increments properly - ensure they are positive
+                            lon_increment = abs((lons[-1] - lons[0]) / (len(lons) - 1)) if len(lons) > 1 else 0
+                            lat_increment = abs((lats[-1] - lats[0]) / (len(lats) - 1)) if len(lats) > 1 else 0
+                            
+                            eccodes.codes_set_double(gid, "iDirectionIncrementInDegrees", lon_increment)
+                            eccodes.codes_set_double(gid, "jDirectionIncrementInDegrees", lat_increment)
+                        
+                        # Set the data values - ensure proper flattening for 2D grid
+                        eccodes.codes_set_values(gid, interpolated_co2.flatten())
+                        
+                        # Write the message to output file
                         eccodes.codes_write(gid, out_file)
-                        
-                        # Release this GRIB handle
-                        eccodes.codes_release(gid)
+                        co2_messages_written += 1
                         
                         if verbose:
-                            print(f"Added CO2 data for level {level}")
+                            print(f"Level {level}: Successfully wrote CO2 message to output file")
+                            
+                    except Exception as e:
+                        if verbose:
+                            print(f"Error creating/writing CO2 message for level {level}: {e}")
+                            import traceback
+                            print(f"Error details: {traceback.format_exc()}")
+                    finally:
+                        # Clean up the message
+                        if 'gid' in locals() and gid:
+                            eccodes.codes_release(gid)
+                
+                # Clean up the template
+                if template_gid:
+                    eccodes.codes_release(template_gid)
+                
+                # Release all template handles
+                for level, gid in template_gids.items():
+                    eccodes.codes_release(gid)
+                
+                # Release all original message handles
+                for gid in original_messages:
+                    eccodes.codes_release(gid)
                     
-                    # Release all template handles
-                    for gid in template_gids.values():
-                        eccodes.codes_release(gid)
-                    
-                print(f"Output GRIB file written to {output_file} with {len(interpolated_co2_3d)} levels of CO2 data")
-                return True
-            except Exception as e:
-                print(f"Error writing output file: {str(e)}")
-                print(traceback.format_exc())
-                return False
+                print(f"Output GRIB file written to {output_file} with {co2_messages_written} levels of CO2 data")
+            return True
+        except Exception as e:
+            print(f"Error writing output file: {str(e)}")
+            if verbose:
+                import traceback
+                print(f"Error details: {traceback.format_exc()}")
+            return False
+    
+    try:
+        success = write_output_grib(output_file, icmgg_iniua_file, co2_interpolated_3d, level_data)
         
-        write_output_grib(output_file, icmgg_iniua_file, co2_interpolated_3d, level_data)
-        
-        return output_file
-        
+        if success:
+            return output_file
+        else:
+            print("Data was not written successfully (this may also indicate that co2 data was already present in the output file).")
+            return None
     except Exception as e:
-        print(f"Error writing output file: {e}")
+        print(f"Error during interpolation: {e}")
         return None
 
 def main():
