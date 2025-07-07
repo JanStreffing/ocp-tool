@@ -64,7 +64,8 @@ def get_icmgg_grid(icmgg_file, variable_name='cc', verbose=False):
                     # Could add more checks here for other identification methods
                 
                 if match_found:
-                    print(f"Found matching variable: {short_name or 'unknown'} (matching {variable_name})")
+                    if verbose:
+                        print(f"Found matching variable: {short_name or 'unknown'} (matching {variable_name})")
                     # We found the variable
                     try:
                         level = eccodes.codes_get(gid, 'level')
@@ -88,7 +89,8 @@ def get_icmgg_grid(icmgg_file, variable_name='cc', verbose=False):
                             'values': values,
                             'type_of_level': type_of_level
                         }
-                        print(f"Target level: {level}")
+                        if verbose:
+                            print(f"Target level: {level}")
                     
                     # Store the first occurrence of coordinates and values for backward compatibility
                     if icmgg_values is None:
@@ -103,12 +105,11 @@ def get_icmgg_grid(icmgg_file, variable_name='cc', verbose=False):
             print(f"Variable '{variable_name}' not found in ICMGG file")
             return None, None, None, None
             
-        print(f"Target grid points: {len(icmgg_lats)}")
-        print(f"Found {len(levels)} vertical levels for {variable_name}")
+        print(f"Target grid number of horizontal points: {len(icmgg_lats)}")
+        print(f"Target grid number of vertical layers: {len(levels)}")
         
         # Sort levels numerically
         sorted_levels = sorted(levels)
-        print(f"Vertical levels range: {sorted_levels[0]} to {sorted_levels[-1]}")
         
         return icmgg_lats, icmgg_lons, icmgg_values, level_data
         
@@ -145,8 +146,6 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
     
     # Step 1: Read the CO2 GRIB file using eccodes
     try:
-        print("Reading CO2 GRIB file using eccodes...")
-        
         # We'll store information for each level
         co2_level_data = {}
         
@@ -194,14 +193,16 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
                         if verbose:
                             print(f"Found CO2 data for level {level}")
                         
-                        print(f"Processed CO2 message at level {level}, shape: {values.shape}")
+                        if verbose:
+                            print(f"Processed CO2 message at level {level}, shape: {values.shape}")
                 except Exception as e:
                     print(f"Error processing message {message_count}: {e}")
                 
                 # Release the message
                 eccodes.codes_release(gid)
             
-            print(f"GRIB file summary: {message_count} total messages, {co2_messages} CO2 messages")
+            if verbose:
+                print(f"GRIB file summary: {message_count} total messages, {co2_messages} CO2 messages")
         
         # Check if we found any CO2 messages
         if not co2_level_data:
@@ -210,7 +211,8 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         
         # Use level 1 data by default or the first available level
         selected_level = 1 if 1 in co2_level_data else sorted(co2_level_data.keys())[0]
-        print(f"Using CO2 data from level: {selected_level}")
+        if verbose:
+            print(f"Using CO2 data from level: {selected_level}")
         
         # Get the data for the selected level
         co2_values = co2_level_data[selected_level]['values']
@@ -241,22 +243,22 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         
     # Sort levels from the target grid
     icmgg_levels = sorted(level_data.keys())
-    print(f"Target grid has {len(icmgg_levels)} vertical levels")
+    if verbose:
+        print(f"Target grid has {len(icmgg_levels)} vertical levels")
     
     # Step 3: Interpolate CO2 data to the ICMGG grid - both horizontally and vertically
     try:
-        print("Interpolating CO2 data to ICMGG grid...")
-        
+        if verbose:
+            print("Interpolating CO2 data to ICMGG grid...")
+            
         # Create a dictionary to store interpolated CO2 data for each level
         co2_interpolated_3d = {}
         
         # Sort CO2 levels
         co2_levels = sorted(co2_level_data.keys())
         print(f"Source CO2 data has {len(co2_levels)} vertical levels")
-        
-        # Debug: Print out the CO2 level keys to check format
-        debug_key_format = True
-        if debug_key_format:
+        if verbose:
+            # Print out the CO2 level keys to check format
             print(f"CO2 level keys format: {co2_levels[:5]}...")
         
         # Step 3a: Horizontal interpolation for each level of CO2 data to the ICMGG grid
@@ -271,20 +273,12 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         first_level = level_data[icmgg_levels[0]]
         target_shape = first_level['lats'].shape
         
-        # Get the first level's lat/lon grid (assuming all levels have same horizontal grid)
+        # Get the first level's lat/lon grid
         icmgg_lats = first_level['lats']
         icmgg_lons = first_level['lons']
         
-        # Normalize longitude values to 0-360 range if needed
-        icmgg_lons_normalized = icmgg_lons.copy()
-        if np.min(icmgg_lons_normalized) < 0:
-            icmgg_lons_normalized[icmgg_lons_normalized < 0] += 360
-            
         # Create target points for interpolation
-        icmgg_points = np.column_stack((icmgg_lons_normalized.flatten(), icmgg_lats.flatten()))
-        
-        # Perform horizontal interpolation for each CO2 level
-        print("Performing horizontal interpolation for each CO2 level...")
+        icmgg_points = np.column_stack((icmgg_lons.flatten(), icmgg_lats.flatten()))
         
         # Start timing for horizontal interpolation loop
         horizontal_start_time = time.time()
@@ -299,15 +293,9 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
             # Create points for interpolation
             co2_points = np.column_stack((co2_lons, co2_lats))
             
-            # Normalize CO2 longitudes
-            co2_lons_normalized = co2_points[:, 0].copy()
-            if np.min(co2_lons_normalized) < 0:
-                co2_lons_normalized[co2_lons_normalized < 0] += 360
-            co2_points_normalized = np.column_stack((co2_lons_normalized, co2_points[:, 1]))
-            
             # Linear interpolation with scipy's griddata
             co2_interpolated = griddata(
-                co2_points_normalized, 
+                co2_points, 
                 co2_values, 
                 icmgg_points, 
                 method='linear'
@@ -317,7 +305,7 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
             if np.isnan(co2_interpolated).any():
                 nan_mask = np.isnan(co2_interpolated)
                 co2_interpolated[nan_mask] = griddata(
-                    co2_points_normalized, 
+                    co2_points, 
                     co2_values, 
                     icmgg_points[nan_mask], 
                     method='nearest'
@@ -368,15 +356,9 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
                 # Create points for interpolation
                 co2_points = np.column_stack((co2_lons, co2_lats))
                 
-                # Normalize CO2 longitudes
-                co2_lons_normalized = co2_points[:, 0].copy()
-                if np.min(co2_lons_normalized) < 0:
-                    co2_lons_normalized[co2_lons_normalized < 0] += 360
-                co2_points_normalized = np.column_stack((co2_lons_normalized, co2_points[:, 1]))
-                
                 # Linear interpolation with scipy's griddata
                 co2_interpolated = griddata(
-                    co2_points_normalized, 
+                    co2_points, 
                     co2_values, 
                     icmgg_points, 
                     method='linear'
@@ -387,7 +369,7 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
                     print(f"  Level {co2_level}: Filling NaN values with nearest neighbor interpolation...")
                     nan_mask = np.isnan(co2_interpolated)
                     co2_interpolated[nan_mask] = griddata(
-                        co2_points_normalized, 
+                        co2_points, 
                         co2_values, 
                         icmgg_points[nan_mask], 
                         method='nearest'
@@ -410,8 +392,9 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         if verbose:
             print(f"Horizontal interpolation completed in {horizontal_duration:.2f} seconds")
             
-        # Step 3b: Vertical interpolation to match the target grid levels
-        print("Performing vertical interpolation to match target grid levels...")
+        # Step 3b: Vertical interpolation to match ICMGG levels
+        if verbose:
+            print("Performing vertical interpolation to match ICMGG levels...")
         
         # Start timing for vertical interpolation loop
         vertical_start_time = time.time()
@@ -468,12 +451,7 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
                 # If no pressure information, use nearest source level
                 nearest_idx = np.abs(src_levels - float(target_level)).argmin()
                 nearest_level = co2_levels[nearest_idx]
-                if nearest_level in co2_horizontal_interpolated:
-                    interpolated_data = co2_horizontal_interpolated[nearest_level].copy()
-                else:
-                    # If no matching level, use default value
-                    interpolated_data.fill(0.0006)
-            
+                interpolated_data = co2_horizontal_interpolated[nearest_level].copy()
             return interpolated_data
         
         # Initialize result dictionary
@@ -611,15 +589,10 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         traceback.print_exc()
         return None
     
-    # Step 4: Write (or overwrite) the interpolated CO2 data to a GRIB file
+    # Step 4: Write the interpolated CO2 data to a new GRIB file
     if output_file is None:
-        output_file = icmgg_iniua_file  # use same name by default to keep pattern
-
-    # Validate filename pattern (ICMGG????INIUA)
-    import re, os as _os
-    _basename = _os.path.basename(output_file)
-    if not re.match(r"^ICMGG\w{4}INIUA$", _basename):
-        raise ValueError(f"Output filename '{_basename}' must match pattern ICMGG????INIUA")
+        base, ext = os.path.splitext(icmgg_iniua_file)
+        output_file = f"{base}_with_co2{ext}"
     
     try:
         print(f"Writing interpolated CO2 data to {output_file}...")
@@ -627,12 +600,8 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         def write_output_grib(output_file, icmgg_file, interpolated_co2_3d, level_data):
             """Write the interpolated CO2 data to a GRIB file"""
             try:
-                # If output file differs from input, start by copying original content
-                if icmgg_file != output_file:
-                    shutil.copy2(icmgg_file, output_file)
-                    print(f"Copied template file to {output_file}")
-                else:
-                    print("Appending CO2 messages directly to existing ICMGG file")
+                # Copy the ICMGG file to the output file
+                shutil.copy2(icmgg_file, output_file)
                 
                 # First, get a template message for each level from the ICMGG file
                 template_gids = {}
@@ -685,58 +654,61 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
                         template_level = level if level in template_gids else list(template_gids.keys())[0]
                         template_gid = template_gids[template_level]
                         
-                        # Instead of cloning the template, create a completely new message from scratch
+                        # Clone the template
+                        gid = eccodes.codes_clone(template_gid)
+                            
+                        # Create a completely new message for CO2 to avoid eccodes parameter database mapping
                         if verbose:
                             print(f"Level {level}: Creating new CO2 message from scratch...")
+                        # Get the sample code for a new grib message (similar to grib_copy example)
+                        # Get original data values and key attributes we need to preserve
+                        original_values = eccodes.codes_get_values(gid)  # Store original data values
                         
+                        # Store essential keys for grid definition
+                        keys_to_preserve = [
+                            'gridType', 'gridDefinitionTemplateNumber', 'Ni', 'Nj',
+                            'iDirectionIncrementInDegrees', 'jDirectionIncrementInDegrees',
+                            'latitudeOfFirstGridPointInDegrees', 'longitudeOfFirstGridPointInDegrees',
+                            'latitudeOfLastGridPointInDegrees', 'longitudeOfLastGridPointInDegrees',
+                            'numberOfPointsAlongAParallel', 'numberOfPointsAlongAMeridian',
+                            'binaryScaleFactor', 'decimalScaleFactor', 'packingType',
+                            'referenceValue', 'bitsPerValue',
+                            'typeOfLevel', 'gridDefinitionDescription', 'resolutionAndComponentFlags',
+                            'dataRepresentationType', 'bitmapPresent'
+                        ]
+                        
+                        preserved_values = {}
+                        for key in keys_to_preserve:
+                            try:
+                                preserved_values[key] = eccodes.codes_get(gid, key)
+                            except Exception:
+                                # Not all keys may exist in all templates
+                                pass
+                        
+                        # Don't try to unset paramId as it's causing errors
+                        # Instead, directly set the CO2 parameters without trying to clear first
+                            
+                        # Now set the CO2-specific metadata
+                        # Directly set the paramId as requested
+                        eccodes.codes_set_long(gid, 'paramId', 210061)  # Set explicit paramId for CO2
+                        
+                        # These may be overridden by eccodes based on paramId, but include them anyway
+                        eccodes.codes_set_string(gid, 'shortName', 'co2')
+                        eccodes.codes_set_string(gid, 'name', 'Carbon Dioxide')
+                        eccodes.codes_set_string(gid, 'units', 'kg kg**-1')
+                        
+                        # Set level
+                        eccodes.codes_set_long(gid, 'level', level)
+                        
+                        # Read back to verify
                         try:
-                            # Create a brand-new GRIB2 message from ECMWF sample. We use reduced gaussian grid with pressure levels
-                            # because it already contains nearly all geometry keys. We will overwrite the geometry with our template values.
-                            gid = eccodes.codes_grib_new_from_samples('reduced_gg_pl_grib2')
-                            
-                            # Copy grid-definition keys from template so that the new message is on exactly the same grid
-                            geometry_keys = [
-                                'gridType',
-                                'latitudeOfFirstGridPointInDegrees', 'longitudeOfFirstGridPointInDegrees',
-                                'latitudeOfLastGridPointInDegrees', 'longitudeOfLastGridPointInDegrees'
-                            ]
-                            for k in geometry_keys:
-                                try:
-                                    eccodes.codes_set(gid, k, eccodes.codes_get(template_gid, k))
-                                except Exception:
-                                    # Some keys (e.g. Ni/Nj) may not exist for reduced_gg, ignore quietly
-                                    pass
-                            
-                            # Get key attributes from the template for grid definition
-                            template_keys = [
-                                'gridType',
-                                'latitudeOfFirstGridPointInDegrees', 'longitudeOfFirstGridPointInDegrees',
-                                'latitudeOfLastGridPointInDegrees', 'longitudeOfLastGridPointInDegrees',
-                                'pl',
-                                'packingType', 'bitmapPresent'
-                            ]
-                            for key in template_keys:
-                                if key == 'pl':
-                                    # 'pl' already set above; avoid resetting to prevent eccodes size warnings
-                                    continue
-                                try:
-                                    value = eccodes.codes_get(template_gid, key)
-                                    eccodes.codes_set(gid, key, value)
-                                except Exception:
-                                    # Not all keys may exist in all templates
-                                    pass
-
-                            # Set CO2 metadata (setting paramId automatically defines shortName/name/units)
-                            eccodes.codes_set_long(gid, 'paramId', 210061)
-                            eccodes.codes_set_long(gid, 'centre', 98)
-                            eccodes.codes_set_string(gid, 'dataType', 'an')
-                        except Exception as e:
+                            current_shortname = eccodes.codes_get(gid, 'shortName')
                             if verbose:
-                                print(f"Level {level}: Error assembling CO2 message: {e}")
-                            else:
-                                print(f"Error with CO2 metadata: {e}")
-                            continue  # skip this level if error occurred
-                            
+                                print(f"Level {level}: Final shortName is '{current_shortname}'")
+                        except:
+                            if verbose:
+                                print(f"Level {level}: Could not read back shortName")
+                                
                         # Set level information
                         if level in level_templates:
                             type_of_level = level_templates[level]['type_of_level']
@@ -745,15 +717,6 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
                             
                         eccodes.codes_set(gid, 'typeOfLevel', type_of_level)
                         eccodes.codes_set(gid, 'level', level)
-                        
-                        # Print what grid type we're using if verbose
-                        try:
-                            grid_type = eccodes.codes_get(gid, 'gridType')
-                            if verbose:
-                                print(f"Level {level}: Using grid type: {grid_type}")
-                        except:
-                            if verbose:
-                                print(f"Level {level}: Could not get grid type from template")
                         
                         # Set the data values
                         eccodes.codes_set_values(gid, interpolated_co2)
@@ -780,7 +743,6 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         
         write_output_grib(output_file, icmgg_iniua_file, co2_interpolated_3d, level_data)
         
-        print(f"Successfully wrote interpolated CO2 data to {output_file}")
         return output_file
         
     except Exception as e:
@@ -806,14 +768,7 @@ def main():
     
     args = parser.parse_args()
     
-    # Determine output file path
-    output_file = args.output if args.output else args.icmgg_iniua
-
-    # Validate filename pattern (ICMGG????INIUA)
-    import re
-    basename = os.path.basename(output_file)
-    if not re.match(r"^ICMGG\w{4}INIUA$", basename):
-        raise ValueError(f"Output filename '{basename}' must match pattern ICMGG????INIUA")
+    output_file = args.output or f"{os.path.splitext(args.icmgg_iniua)[0]}_WITH_CO2{os.path.splitext(args.icmgg_iniua)[1]}"
     
     if args.dask:
         dask.config.set(scheduler='processes')
@@ -824,8 +779,6 @@ def main():
     result = interpolate_co2_to_icmgg(args.co2_grib, args.icmgg_iniua, output_file, args.var, args.co2_var, args.verbose, args.dask, args.workers)
 
     if result:
-        print(f"Successfully interpolated CO2 data to {result}")
-        
         # Check if the CO2 shortName was set correctly
         if args.verbose:
             try:
@@ -835,7 +788,7 @@ def main():
             except Exception:
                 pass
     else:
-        print("Interpolation failed.")
+        print("Data was not written successfully (this may also indicate that co2 data was already present in the output file).")
 
 if __name__ == "__main__":
     main()
