@@ -848,26 +848,44 @@ def main():
     """
     import argparse
     import dask
+    import os
     
-    parser = argparse.ArgumentParser(description="Interpolate CO2 data from a GRIB file to an ICMGG grid")
-    parser.add_argument('co2_grib', help='Path to CO2 GRIB file')
-    parser.add_argument('icmgg_iniua', help='Path to ICMGG INIUA file')
-    parser.add_argument('--output', help="Path to save the output GRIB file")
-    parser.add_argument('--var', default='cc', help="Name of the variable in the ICMGG file to match the grid to")
-    parser.add_argument('--co2_var', default='co2', help="Name of the CO2 variable in the GRIB file")
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Interpolate CO2 data from a GRIB file to an ICMGG grid')
+    parser.add_argument('co2_grib', help='Path to the CO2 GRIB file')
+    parser.add_argument('icmgg_iniua', help='Path to the ICMGG INIUA file')
+    parser.add_argument('output_file', nargs='?', help='Output file path (default: input_name_WITH_CO2.suffix)')
+    parser.add_argument('--var', default='cc', help='Variable name in the ICMGG file to use for grid reference (default: cc)')
+    parser.add_argument('--co2_var', default='co2', help='Variable name in the CO2 GRIB file (default: co2)')
     parser.add_argument('--verbose', action='store_true', help="Enable verbose output with detailed timing")
     parser.add_argument('--dask', action='store_true', help="Use Dask for parallel processing")
     parser.add_argument('--workers', type=int, default=None, help="Number of Dask workers to use (default: number of CPU cores)")
     
     args = parser.parse_args()
     
-    output_file = args.output or f"{os.path.splitext(args.icmgg_iniua)[0]}_WITH_CO2{os.path.splitext(args.icmgg_iniua)[1]}"
+    # Determine output file path
+    output_file = args.output_file or f"{os.path.splitext(args.icmgg_iniua)[0]}_WITH_CO2{os.path.splitext(args.icmgg_iniua)[1]}"
+    
+    # Check if output file exists and delete it if it does
+    if os.path.exists(output_file):
+        if args.verbose:
+            print(f"Output file {output_file} already exists, removing it...")
+        os.remove(output_file)
+        if args.verbose:
+            print(f"Removed existing output file: {output_file}")
     
     if args.dask:
         dask.config.set(scheduler='processes')
         if args.workers is None:
             args.workers = os.cpu_count()
         dask.config.set(num_workers=args.workers)
+    
+    # Ensure output directory exists
+    output_dir = os.path.dirname(output_file)
+    if output_dir and not os.path.exists(output_dir):
+        if args.verbose:
+            print(f"Creating output directory: {output_dir}")
+        os.makedirs(output_dir, exist_ok=True)
     
     result = interpolate_co2_to_icmgg(args.co2_grib, args.icmgg_iniua, output_file, args.var, args.co2_var, args.verbose, args.dask, args.workers)
 
