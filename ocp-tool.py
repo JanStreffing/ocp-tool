@@ -50,14 +50,19 @@ import matplotlib.pyplot as plt
 import gribapi
 import csv
 import math
+import xarray as xr
+import shutil
 from pathlib import Path
-
+import subprocess
+import datetime
 
 import pyfesom2 as pf
 from tqdm import tqdm
 from mpl_toolkits.basemap import Basemap
 from netCDF4 import Dataset
 from shutil import copy2
+from scipy.spatial import cKDTree
+
 from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
 
 #-----------------------------------------------------------------------------
@@ -106,7 +111,7 @@ def read_grid_file(res_num, input_path_reduced_grid, input_path_full_grid, trunc
 
        
     lines = fin.readlines()
-    return (lines, NN)
+    return (lines, int(NN))
 
 
 def read_grid_from_icmgg(icmfile, NN, truncation_type):
@@ -122,9 +127,13 @@ def read_grid_from_icmgg(icmfile, NN, truncation_type):
    
    # write grid description to file
    # only need to do this once
-   breakpoint()
-   os.system('cdo griddes %s > griddes.txt' % (file,))
-   
+   try:
+       os.system('grib_copy -w edition=2 '+file+' '+file+'.grib2')
+       os.system('cdo griddes '+file+'.grib2 > griddes.txt')
+   except:
+       os.system('grib_copy -w edition=1 '+file+' '+file+'.grib1')
+       os.system('cdo griddes '+file+'.grib1 > griddes.txt')
+
    # read data from text file
    f = open('griddes.txt','r')
    lines = f.readlines()   
@@ -385,21 +394,22 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path, interp_
     os.chdir(input_path_oce)
 
     # execute the command
-
+    print(' Does FESOM grid path exist? '+str(os.path.exists(fesom_grid_file_path)))
+    print(' Is the overwrite active? '+str(force_overwrite_griddes))
     if os.path.exists(fesom_grid_file_path) and force_overwrite_griddes==False:
-        print(f"Using existing grid description file '{fesom_grid_file_path}'")
+        print(f" Using existing grid description file '{fesom_grid_file_path}'")
         cmd = './prep_fesom.sh '+fesom_grid_file_path+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
     else:
         if os.path.exists(fesom_grid_file_path):
-            print(f"The file '{fesom_grid_file_path}' exists but force_overwrite_griddes=True means we make a create one anyway via pyfesom2")        
+            print(f" The file '{fesom_grid_file_path}' exists but force_overwrite_griddes=True means we make a create one anyway via pyfesom2")        
         if force_overwrite_griddes==True:
-            print(f"The file '{fesom_grid_file_path}' does not exist. Attempting to create via pyfesom2")
+            print(f" The file '{fesom_grid_file_path}' does not exist. Attempting to create via pyfesom2")
         griddir=os.path.dirname(fesom_grid_file_path)
         grid = pf.read_fesom_ascii_grid(griddir=griddir, cavity=cavity)
         pf.write_mesh_to_netcdf(grid, ofile=input_path_oce+'/mesh.nc', overwrite=True, cavity=cavity)
         cmd = './prep_fesom.sh '+input_path_oce+'/mesh.nc'+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
- 
-    print(cavity)
+    print(longline)
+    print (' Using the following command to generate OpenIFS lsm based on FESOM mesh description file:')
     print(cmd)
     print(' Reading ocean based land sea mask:', grid_name_oce)
     os.system(cmd)
@@ -414,23 +424,29 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path, interp_
     fesom_lsm = mesh.variables['cell_area']
     fesom_grid_sorted = fesom_lsm[:]
     
-    print(longline)
-    
     return fesom_grid_sorted
 
 
-def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields,verbose=False):
+def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fields, verbose=False):
     '''
-    This function reads the oifs input file in grib format and save it into a
-    list of numpy arrays.
+    This function reads the oifs input file in grib format and saves it into a
+    list of numpy arrays. It also filters out additional timesteps of the 'lsm'
+    parameter.
     '''
+
+    print(longline)
     print(' Opening Grib input file: %s ' % (input_path_oifs,))
     input_file_oifs = input_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT'
     gid = [None] * num_fields
     gribfield = [None] * num_fields
+
+    # Flag to track if the first 'lsm' timestep has been saved
+    lsm_saved = False
+
     with open(input_file_oifs, 'rb') as f:
         keys = ['N', 'shortName']
-
+        if verbose:
+            print('num_fields'+str(num_fields))
         for i in range(num_fields):
             gid[i] = gribapi.grib_new_from_file(f)
             if gid[i] is None:
@@ -443,25 +459,85 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
                     print('%s=%s' % (key, gribapi.grib_get(gid[i], key)))
 
             shortName = gribapi.grib_get(gid[i], 'shortName')
-
             if shortName == 'lsm':
                 lsm_id = i
+                num_timesteps = gribapi.grib_get(gid[i], 'numberOfDataPoints')
+                print('number of lsm timesteps: '+str(num_timesteps))
             if shortName == 'slt':
                 slt_id = i
             if shortName == 'cl':
                 cl_id = i
 
-            nres = gribapi.grib_get(gid[i], 'N')
-            gribfield[i] = gribapi.grib_get_values(gid[i])
+            if not lsm_saved or shortName != 'lsm':
+                nres = gribapi.grib_get(gid[i], 'N')
+                values = gribapi.grib_get_values(gid[i])
+                if verbose:
+                    print(f"Shape of '{shortName}' values: {np.shape(values)}")
+                gribfield[i] = values
 
-    return (gribfield, lsm_id, slt_id, cl_id, gid)
+    # Filter out None values from gribfield
+    gribfield = [field for field in gribfield if field is not None]
+    print(longline)
+    print('Shape of Gribfield:'+str(np.shape(gribfield)))
+
+    return (gribfield, lsm_id, slt_id, cl_id, gid, num_fields)
 
 
 
+def add_albedo_fields(input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, res_num, input_path_reduced_grid, truncation_type, ifs_grid=None, verbose=False):
+    '''
+    This function adds bare_soil_albedo fields to the ICMGG file
+    It remaps the albedo fields to the target grid before appending to the ICMGG file
+    Uses CDO (Climate Data Operators) for remapping
+    '''
+    # Setup paths and files
+    albedo_file = f"{input_path_oifs}/bare_soil_albedos.grb"
+    output_file_oifs = f"{output_path_oifs}ICMGG{exp_name_oifs}INIT_{grid_name_oce}"
+    temp_file = f"{output_path_oifs}tmp_albedo_remapped.grb"
+    
+    # Check if files exist
+    if not os.path.exists(albedo_file):
+        print(f"Warning: Albedo file not found: {albedo_file}")
+        return False
+    
+    if not os.path.exists(output_file_oifs):
+        print(f"Error: Output ICMGG file not found: {output_file_oifs}")
+        return False
+    
+    print(f"\nAdding bare soil albedo fields to {output_file_oifs}")
+    
+    try:
+        print(f"Remapping albedo fields to match {output_file_oifs} grid")
+        os.system(f"grib_copy -w edition=2 {output_file_oifs} {output_file_oifs}.grib2")
+        os.system(f"cdo griddes {output_file_oifs}.grib2 > griddes.txt")
+        os.system(f"cdo remapnn,griddes.txt {albedo_file} {temp_file}")
+        
+        # Step 3: Append the remapped albedo file to the output ICMGG file
+        if os.path.exists(temp_file):
+            print("Appending remapped albedo fields to ICMGG file")
+            with open(temp_file, 'rb') as src, open(output_file_oifs, 'ab') as dst:
+                dst.write(src.read())
+            
+            # Clean up temporary files
+            os.remove(temp_file)
+            os.remove("griddes.txt")
+            os.remove(f"{output_file_oifs}.grib2")
+            
+            print("Successfully remapped and added albedo fields to ICMGG file")
+            return True
+        else:
+            print(f"Error: Remapping failed, temporary file {temp_file} not created")
+            return False
+            
+    except Exception as e:
+        print(f"Unexpected error adding albedo fields: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
-def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
-              grid_name_oce, num_fields, gid,verbose=False):
+def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, output_path_lpjg,
+              grid_name_oce, num_fields, gid, lsm_id, lsm_lat, lsm_lon, res_num, truncation_type, verbose=False):
     '''
     This function copies the input gribfile to the output folder and modifies
     it by writing the whole gribfield_mod, including the altered land sea mask
@@ -472,11 +548,71 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs,
     output_file_oifs = output_path_oifs + 'ICMGG' + exp_name_oifs + 'INIT_' + grid_name_oce
     copy2(input_file_oifs, output_file_oifs)
 
+    # Step 1: Open the GRIB file in read mode and read existing messages
+    with open(output_file_oifs, 'rb') as f:
+        # Initialize a list to store (gid, dataDate) tuples for 'lsm' fields
+        lsm_datadates = []
+
+        # Iterate through the GRIB messages
+        while True:
+            gidi = gribapi.grib_new_from_file(f)
+            if gidi is None:
+                break  # No more messages
+
+            # Check if the field is 'lsm'
+            shortName = gribapi.grib_get(gidi, 'shortName')
+            if shortName == 'lsm':
+                # Read and store the dataDate for 'lsm'
+                data_date = gribapi.grib_get(gidi, 'dataDate')
+                lsm_datadates.append((gidi, data_date))  # Store handle with dataDate
+
+        print('lsm_datadates:', lsm_datadates)  # Print the extracted dataDate values
+
+    # Step 2: Open the GRIB file in write mode and overwrite 'lsm' data with correct dates
     with open(output_file_oifs, 'r+b') as f:
+        # Initialize an index for gribfield_mod to track which field we are using
+        lsm_index = 0
+
+        # Process each 'lsm' entry separately
+        for gidi, data_date in lsm_datadates:
+            print('Overwriting lsm for date:', data_date)
+
+            # Ensure the index is within the range of gribfield_mod
+            if lsm_index < len(gribfield_mod):
+                # Set the values for the 'lsm' field using the correct index
+                gribapi.grib_set_values(gidi, gribfield_mod[lsm_id].flatten())
+
+                # Set the correct dataDate
+                gribapi.grib_set(gidi, 'dataDate', data_date)  # Use the stored dataDate
+
+                # Write the message for the current dataDate
+                gribapi.grib_write(gidi, f)
+
+                # Increment the index for the next 'lsm' field
+                lsm_index += 1
+            else:
+                print(f"Error: Index {lsm_index} out of range for gribfield_mod.")
+
+            # Release handle after writing
+            gribapi.grib_release(gidi)
+
+        # Handle non-lsm fields separately
         for i in range(num_fields):
-            gribapi.grib_set_values(gid[i], gribfield_mod[i])
-            gribapi.grib_write(gid[i], f)
+            shortName = gribapi.grib_get(gid[i], 'shortName')
+            if shortName != 'lsm':
+                gribapi.grib_set_values(gid[i], gribfield_mod[i])
+                gribapi.grib_write(gid[i], f)
             gribapi.grib_release(gid[i])
+
+    # Write LPJ-Guess gridlist file
+    if truncation_type == 'linear':
+        gridlist_name = 'gridlist_TL'+str(res_num)+'_'+grid_name_oce+'.txt'
+    elif truncation_type == 'cubic-octahedral':
+        gridlist_name = 'gridlist_TCO'+str(res_num)+'_'+grid_name_oce+'.txt'
+    with open(output_path_lpjg+gridlist_name, "w") as file:
+        # Write coordinates in the format "lat lon"
+        for lat, lon in zip(lsm_lat, lsm_lon):
+            file.write(f"{lat} {lon}\n")
 
 
 def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=False):
@@ -514,8 +650,8 @@ def generate_coord_area(res_num, input_path_reduced_grid, input_path_full_grid, 
     return (center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN)
 
 
-def process_lsm(res_num, input_path_oifs, output_path_oifs,
-                                 exp_name_oifs, grid_name_oce, num_fields,
+def process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
+                                 exp_name_oifs, output_path_lpjg, grid_name_oce, num_fields,
                                  fesom_grid_sorted, lons_list,
                                  center_lats, center_lons,crn_lats, crn_lons, 
                                  gridcell_area,verbose=False):
@@ -525,24 +661,24 @@ def process_lsm(res_num, input_path_oifs, output_path_oifs,
     modified in the exact same locations
     '''
 
-    gribfield, lsm_id, slt_id, cl_id, gid = read_lsm(res_num, input_path_oifs, 
+    gribfield, lsm_id, slt_id, cl_id, gid, num_fields = read_lsm(res_num, input_path_oifs, 
                                                      output_path_oifs, 
                                                      exp_name_oifs, num_fields,verbose=verbose)
-    lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
-                                                           fesom_grid_sorted, 
+    lsm_lat, lsm_lon, lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod = modify_lsm(gribfield, 
+                                                           fesom_grid_sorted, grid_name_oce,
                                                            lsm_id, slt_id, cl_id, 
                                                            lons_list, center_lats, 
                                                            center_lons, crn_lats, crn_lons, 
                                                            gridcell_area,
                                                            verbose=verbose)
-    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, 
-              grid_name_oce, num_fields, gid,verbose=verbose)
+    write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, output_path_lpjg,
+              grid_name_oce, num_fields, gid, lsm_id, lsm_lat, lsm_lon, res_num, truncation_type, verbose=verbose)
     return (lsm_binary_a,lsm_binary_l,lsm_binary_r,gribfield_mod)
 
 
-def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, center_lons, 
-                      crn_lats, crn_lons, gridcell_area, lsm_binary_a ,lsm_binary_l , lsm_binary_r, 
-                      NN, input_path_runoff,verbose=False):
+def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg, output_path_lpjg, 
+                      center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a, 
+                      lsm_binary_l , lsm_binary_r, NN, input_path_runoff, input_path_oifs=None, output_path_oifs=None, exp_name_oifs=None, verbose=False):
     '''
     This function writes the binary masks, areas and grids files for
     oasis3-mct
@@ -556,7 +692,6 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
     atmf is the fraction of ocean in each cell, but
     IFS always has 1 or 0, so it is the same as atmo.
     '''
-
     if len(str(NN))>4:
         NN = int(str(NN)[:-1])
     
@@ -568,11 +703,17 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
         # For OpenIFS + NEMO + Runoffmapper we need two atmosphere grids:
         # atmo: used for atm->ocn remapping (to find ocean)
         # atmr: used for atm->runoff remapping (to find land)
+        if truncation_type == 'cubic-octahedral':
+            lpjg_oasis_name = 'TCO' + str(NN-1) + '-land'
+        elif truncation_type == 'linear':
+            lpjg_oasis_name = 'TL' + str(NN*2-1) + '-land'
 
-        for grids_name in ('{}{:03}'.format(s, int(NN)) for s in ('A', 'L', 'R')):
-
-            # OASIS requires certain names for the dimensions etc
+        for grids_name in (
+            '{}{:03}'.format(s, int(NN)) if s in ('A', 'L', 'R') else s
+            for s in ('A', 'L', 'R', lpjg_oasis_name)
+        ):
             print(' Write lons, lats, corner points for grid: %s ' % (grids_name,), '(T%s)' % (res_num,))
+
             xname = 'x_%s' % (grids_name,)
             yname = 'y_%s' % (grids_name,)
             lonname = '%s.lon' % (grids_name,)
@@ -588,7 +729,7 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
             id_lat.units = 'degrees_north'
             id_lat.standard_name = 'Latitude'
 
-         # Write corner points to grids file
+        # Write corner points to grids file
             if filebase == 'grids':
                 crnname = 'crn_%s' % (grids_name,)
                 cloname = '%s.clo' % (grids_name,)
@@ -597,19 +738,19 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_clo = nc.createVariable(cloname, 'float64', (crnname, yname, xname))
                 id_cla = nc.createVariable(claname, 'float64', (crnname, yname, xname))
 
-         # Write land-sea masks to masks file
+        # Write land-sea masks to masks file
             elif filebase == 'masks':
                 mskname = '%s.msk' % (grids_name,)
                 id_msk = nc.createVariable(mskname, 'int32', (yname, xname))
-                id_msk.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
+                id_msk.coordinates = '%s.lat %s.lon' % (grids_name, grids_name)
                 id_msk.valid_min = 0.
                 id_msk.valid_max = 1
 
-         # Write grid cell area to areas file
+        # Write grid cell area to areas file
             elif filebase == 'areas':
                 areaname = '%s.srf' % (grids_name,)
                 id_area = nc.createVariable(areaname, 'float64', (yname, xname))
-                id_area.coordinates = '%s.lat %s.lon' % (grids_name,grids_name)
+                id_area.coordinates = '%s.lat %s.lon' % (grids_name, grids_name)
 
             id_lon[:, :] = center_lons[:, :]
             id_lat[:, :] = center_lats[:, :]
@@ -627,8 +768,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_cla.valid_max = crn_lats.max()
 
             elif filebase == 'masks':
-                if grids_name.startswith('A') :
-                    id_msk[:, :] = np.round(lsm_binary_a[:, :])  
+                if grids_name.startswith('A'):
+                    id_msk[:, :] = np.round(lsm_binary_a[:, :])
                 elif grids_name.startswith('L'):
                     id_msk[:, :] = np.round(lsm_binary_l[:, :])
                 elif grids_name.startswith('R'):
@@ -636,6 +777,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                         id_msk[:, :] = np.abs(np.round(lsm_binary_r[:, :] - 1))
                     else:
                         id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
+                elif '-land' in grids_name and ('TCO' in grids_name or 'TL' in grids_name):
+                    id_msk[:, :] = np.abs(np.round(lsm_binary_a[:, :] - 1))
                 else:
                     raise RuntimeError('Unexpected grid name: {}'.format(grids_name))
 
@@ -644,10 +787,10 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
                 id_area.valid_min = gridcell_area.min()
                 id_area.valid_max = gridcell_area.max()
 
-
         # Copying runoff mapper grids and areas into oasis3-mct files
 
         input_file_rnf = '%srunoff_%s.nc' % (input_path_runoff, filebase)
+        print(' Adding '+input_file_rnf+' to oasis files')
         rnffile = Dataset(input_file_rnf, 'r')
 
         nc.setncatts(rnffile.__dict__)
@@ -664,6 +807,91 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, center_lats, ce
         print(' Wrote %s ' % (filename,))
 
         print(longline)
+
+    # Step 1: Read input files
+    print("Read input files")
+    vegin_grid = xr.open_dataset(f"{input_path_lpjg}/vegin_grid.nc")
+    vegin = xr.open_dataset(f"{input_path_lpjg}/vegin.nc")
+
+    # Extract source grid and data
+    print("Extract source grid and data")
+    src_lon = np.squeeze(vegin_grid["A128.lon"].values)
+    src_lat = np.squeeze(vegin_grid["A128.lat"].values)
+    variables_to_interpolate = list(vegin.data_vars)
+
+    # Prepare target grid
+    print("Prepare target grid")
+    target_lon = np.squeeze(center_lons)
+    target_lat = np.squeeze(center_lats)
+
+    # Create a KDTree for nearest-neighbor interpolation
+    print("Create a KDTree for nearest-neighbor interpolation")
+    src_points = np.column_stack((src_lon, src_lat))
+    target_points = np.column_stack((target_lon, target_lat))
+    tree = cKDTree(src_points)
+    _, idx = tree.query(target_points)
+
+    # Step 2: Create a new dataset based on the original
+    print("Creating interpolated dataset")
+    interpolated_ds = vegin.copy()
+
+    # Adjust the dimensions to match the new grid size
+    print("Adjusting dimensions...")
+    for dim_name, dim_size in interpolated_ds.dims.items():
+        if dim_size == len(src_lon):  # Replace source grid size with target grid size
+            print(f"Updating dimension: {dim_name} from {dim_size} to {len(target_lon)}")
+            interpolated_ds = interpolated_ds.rename_dims({dim_name: f"{dim_name}_old"})
+            interpolated_ds = interpolated_ds.assign_coords({f"{dim_name}_old": np.arange(dim_size)})
+            interpolated_ds = interpolated_ds.assign_coords({dim_name: np.arange(len(target_lon))})
+
+    # Interpolate variables
+    print("Interpolating variables...")
+    for var in variables_to_interpolate:
+        try:
+            src_data = vegin[var].values.squeeze()
+
+            # Handle variables that should retain original dimensions
+            original_dims = vegin[var].dims
+            if len(original_dims) == 1 and original_dims[0].endswith("_ncnt"):
+                print(f"Skipping interpolation for {var} (retaining original dimension)")
+                continue
+
+            # Handle single-value variables
+            if src_data.size == 1:
+                print(f"Variable {var} has a single value; replicating across the grid.")
+                interpolated = np.full(target_lon.shape, src_data.item())
+                interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+                continue
+
+            # Check size alignment
+            if src_data.size != src_points.shape[0]:
+                print(f"Skipping variable {var} due to size mismatch.")
+                continue
+
+            # Perform interpolation
+            src_data_flat = src_data.ravel()
+            interpolated = src_data_flat[idx].reshape(target_lon.shape)
+            interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+            print(f"Updated variable: {var}")
+        except Exception as e:
+            print(f"Error interpolating variable {var}: {e}")
+
+    # Save the modified dataset
+    print("Saving interpolated dataset")
+
+    if truncation_type == 'cubic-octahedral':
+        vegin_name = 'vegin_TCO' + str(NN-1) + '.nc'
+    elif truncation_type == 'linear':
+        vegin_name = 'vegin_TL' + str(NN*2-1) + '.nc'
+
+    interpolated_ds.to_netcdf(f"{output_path_lpjg}/"+vegin_name, mode="w")
+
+    print(f"Interpolated data successfully saved to {output_path_lpjg}/"+vegin_name)
+
+    # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
+    ifs_grid = f"TCO{res_num}" if truncation_type == "cubic-octahedral" else f"TL{res_num}"
+    # Use a default date of 19900101
+    add_albedo_fields(input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, res_num, input_path_reduced_grid, truncation_type, ifs_grid)
 
 
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
@@ -683,6 +911,7 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
 
     drainage = rnffile.variables[u'drainage_basin_id'][:]
     arrival = rnffile.variables[u'arrival_point_id'][:]
+    calving = rnffile.variables[u'calving_point_id'][:]
 
     # Set projection
     lons = rnffile.variables[u'lon'][:]
@@ -745,41 +974,47 @@ def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
     # Fix for Glacial calving maps
     # Antarctica
     for lo, lon in enumerate(lons):
-        #removing old arrival points
+        #removing old calving points
         for la, lat in enumerate(lats):
             if lat < -55:
-                if arrival[la, lo] == 66:
-                    arrival[la, lo] = -2
+                if calving[la, lo] == 66:
+                    calving[la, lo] = -2
 
     for lo, lon in enumerate(lons):
-        # adding new arrival points
+        # adding new calving points
         if lon > 300 and lon < 320:
             for la, lat in enumerate(lats):
                 if lat > -70 and lat < -60:
-                    if arrival[la, lo] == -2:
-                        arrival[la, lo] = 66
+                    if calving[la, lo] == -2:
+                        calving[la, lo] = 66
+        if lon > 315 and lon < 325:
+            for la, lat in enumerate(lats):
+                if lat > -65 and lat < -55:
+                    if calving[la, lo] == -2:
+                        calving[la, lo] = 66
         if lon > 320 and lon < 360:
             for la, lat in enumerate(lats):
                 if lat > -60 and lat < -50:
-                    if arrival[la, lo] == -2:
-                        arrival[la, lo] = 66
+                    if calving[la, lo] == -2:
+                        calving[la, lo] = 66
         if lon > 170 and lon < 180:
             for la, lat in enumerate(lats):
                 if lat > -75 and lat < -65:
-                    if arrival[la, lo] == -2:
-                        arrival[la, lo] = 66
+                    if calving[la, lo] == -2:
+                        calving[la, lo] = 66
     # Greenland
     for lo, lon in enumerate(lons):
-        # adding new arrival points
+        # adding new calving points
         if lon > 300 and lon < 310:
             for la, lat in enumerate(lats):
                 if lat > 50 and lat < 60:
-                    if arrival[la, lo] == -2:
-                        arrival[la, lo] = 1
+                    if calving[la, lo] == -2:
+                        calving[la, lo] = 1
 
     # Saving results
     rnffile.variables[u'drainage_basin_id'][:] = drainage
     rnffile.variables[u'arrival_point_id'][:] = arrival
+    rnffile.variables[u'calving_point_id'][:] = calving
     rnffile.close()
 
     plotting_runoff(drainage, arrival, lons, lats)
@@ -889,7 +1124,7 @@ def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
 
     
     
-def modify_lsm(gribfield, fesom_grid_sorted, lsm_id, slt_id, cl_id, lons_list, 
+def modify_lsm(gribfield, fesom_grid_sorted, grid_name_oce, lsm_id, slt_id, cl_id, lons_list, 
                center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
                verbose=False):
     '''
@@ -903,34 +1138,41 @@ def modify_lsm(gribfield, fesom_grid_sorted, lsm_id, slt_id, cl_id, lons_list,
     lsm_binary_l = copy.deepcopy(gribfield[lsm_id])
     lsm_binary_l = lsm_binary_l[np.newaxis, :]
     lsm_binary_r = lsm_binary_l.copy()
-
-    # Automatic lake removal with lakes mask
     gribfield_mod = gribfield[:]
-    lsm_diff = np.subtract(gribfield_mod[lsm_id][:], fesom_grid_sorted)
-    
-    # Soil class of removed lakes is set to SANDY CLAY LOAM
-    for i in np.arange (0, len(gribfield_mod[slt_id])-1):
-        if gribfield_mod[lsm_id][i] <= 0.5 and fesom_grid_sorted[i] >= .99:
-            gribfield_mod[slt_id][i] = 6
-            gribfield_mod[lsm_id][i] = 1 
-            
-    for i in np.arange (0, len(gribfield_mod[slt_id])-1):
-        if gribfield_mod[lsm_id][i] >= 0.5 and fesom_grid_sorted[i] < .99:
-            gribfield_mod[slt_id][i] = 0
-            gribfield_mod[lsm_id][i] = 0
-            
-    #gribfield_mod[lsm_id]=fesom_grid_sorted
-    
 
-    
+    if grid_name_oce != 'AMIP':
+        # Automatic lake removal with lakes mask
+        lsm_diff = np.subtract(gribfield_mod[lsm_id][:], fesom_grid_sorted)
+        
+        # Soil class of removed lakes is set to SANDY CLAY LOAM
+        for i in np.arange (0, len(gribfield_mod[slt_id])-1):
+            if gribfield_mod[lsm_id][i] <= 0.5 and fesom_grid_sorted[i] >= .5:
+                gribfield_mod[slt_id][i] = 6
+                gribfield_mod[lsm_id][i] = 1
+
+        for i in np.arange (0, len(gribfield_mod[slt_id])-1):
+            if gribfield_mod[lsm_id][i] >= 0.5 and fesom_grid_sorted[i] < .5:
+                gribfield_mod[slt_id][i] = 0
+                gribfield_mod[lsm_id][i] = 0
+    else:
+        print(' Skipped modfiying OpenIFS grid, because we are in AMIP mode')
+            
     # Mask with lakes counting as land in correct format for oasis3-mct file
     lsm_binary_a = gribfield_mod[lsm_id]
     lsm_binary_a = lsm_binary_a[np.newaxis, :]
 
-    return (lsm_binary_a,lsm_binary_l, lsm_binary_r, gribfield_mod)
+    # Generate list of new OpenIFS land points for LPJ-Guess
+    lsm_lat=[]
+    lsm_lon=[]
+    for i in np.arange (0, len(gribfield_mod[slt_id])-1):
+        if gribfield_mod[lsm_id][i] >= 0.5:
+            lsm_lat.append(center_lats[0,i])
+            lsm_lon.append(center_lons[0,i])
+    print('Number of land points: '+str(len(lsm_lat)))
+
+    return (lsm_lat, lsm_lon, lsm_binary_a, lsm_binary_l, lsm_binary_r, gribfield_mod)
 
 
-# In[5]:
 
 
 #-----------------------------------------------------------------------------
@@ -946,42 +1188,45 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [159]
+    resolution_list = [95]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'linear'
+    truncation_type = 'cubic-octahedral'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'abda'#default for cubic-octahedral
+    exp_name_oifs = 'ab45' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
-    num_fields = 50
+    num_fields = 81
 
     # Name of ocean model grid. 
-    grid_name_oce = 'CORE2'
+    grid_name_oce = 'AMIP'
     cavity = False # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r360x181'
-    root_dir = '/work/ab0246/a270092/software/ocp-tool2/'
+    root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/core2/mesh.nc'
-    force_overwrite_griddes = True
+    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/core2_griddes_nodes.nc'
+    force_overwrite_griddes = False
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
     input_path_oifs = root_dir+'input/openifs_input_default/'
     input_path_runoff = root_dir+'input/runoff_map_default/'
+    input_path_lpjg = root_dir+'input/lpj-guess/'
 
     # Output file directories.
     output_path_oifs = root_dir+'output/openifs_input_modified/'
     output_path_runoff = root_dir+'output/runoff_map_modified/'
     output_path_oasis = root_dir+'output/oasis_mct3_input/'
+    output_path_lpjg = root_dir+'output/lpj-guess/'
     
-    
-    
-    
+    if grid_name_oce == 'CORE2':
+        manual_basin_removal=['caspian-sea', 'black-sea']
+    else:
+        manual_basin_removal=['caspian-sea']
     
     # Find working directory
     dir_path = root_dir
@@ -997,45 +1242,65 @@ if __name__ == '__main__':
 
     # Loop over atmosphere resolutions. Todo: select correct exp_name_oifs
     for res_num in resolution_list:
-
+        
         center_lats, center_lons, \
         crn_lats, crn_lons, \
         gridcell_area, lons_list, \
         NN = generate_coord_area(res_num,
                                  input_path_reduced_grid, input_path_full_grid,
                                  truncation_type,exp_name_oifs=exp_name_oifs,verbose=verbose)
-        
-        fesom_grid_sorted = read_fesom_grid(input_path_oce ,grid_name_oce, fesom_grid_file_path ,interp_res, 
-                                          cavity=cavity, force_overwrite_griddes=force_overwrite_griddes, 
-                                          verbose=verbose)
-        
-        lsm_binary_a,lsm_binary_l,lsm_binary_r, gribfield_mod = process_lsm(res_num, input_path_oifs, output_path_oifs,
-                                 exp_name_oifs, grid_name_oce, num_fields,
-                                 fesom_grid_sorted, lons_list,
-                                 center_lats, center_lons, crn_lats, crn_lons, 
-                                 gridcell_area, verbose=verbose)
 
-        write_oasis_files(res_num,
-                          output_path_oasis, grid_name_oce,
-                          center_lats, center_lons, crn_lats, crn_lons, gridcell_area,
-                          lsm_binary_a, lsm_binary_l, lsm_binary_r, NN, input_path_runoff,verbose=verbose)
+        if grid_name_oce != 'AMIP':
+            fesom_grid_sorted = read_fesom_grid(input_path_oce ,grid_name_oce, fesom_grid_file_path ,interp_res, 
+                                              cavity=cavity, force_overwrite_griddes=force_overwrite_griddes, 
+                                              verbose=verbose)
+        if grid_name_oce == 'AMIP':
+            print(' Skipped reading FESOM mesh, because we are in AMIP mode')
+            fesom_grid_sorted = []
+
+        lsm_binary_a,lsm_binary_l,lsm_binary_r, gribfield_mod = process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
+                                     exp_name_oifs, output_path_lpjg, grid_name_oce, num_fields,
+                                     fesom_grid_sorted, lons_list,
+                                     center_lats, center_lons, crn_lats, crn_lons, 
+                                     gridcell_area, verbose=verbose)
+        write_oasis_files_args = {
+            'res_num': res_num,
+            'output_path_oasis': output_path_oasis,
+            'grid_name_oce': grid_name_oce,
+            'input_path_lpjg': input_path_lpjg,
+            'output_path_lpjg': output_path_lpjg,
+            'center_lats': center_lats,
+            'center_lons': center_lons,
+            'crn_lats': crn_lats,
+            'crn_lons': crn_lons,
+            'gridcell_area': gridcell_area,
+            'lsm_binary_a': lsm_binary_a,
+            'lsm_binary_l': lsm_binary_l,
+            'lsm_binary_r': lsm_binary_r,
+            'NN': NN,
+            'input_path_runoff': input_path_runoff,
+            'input_path_oifs': input_path_oifs,
+            'output_path_oifs': output_path_oifs,
+            'exp_name_oifs': exp_name_oifs,
+            'verbose': verbose
+        }
+        
+        write_oasis_files(**write_oasis_files_args)
         
         plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=verbose)
         
+
         # Interpolate CO2 from GRIB file to ICMGG grid
         co2_grib_file = os.path.join(input_path_oifs, 'cams_co2_initial.grib')
         icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
         interpolate_co2_to_icmgg(co2_grib_file, icmgg_file, output_file=icmgg_file --dask --workers 4)
 
-        '''lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
+        lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal,verbose=verbose)
 
         modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
-                          output_path_oasis,verbose=verbose)'''
+                          output_path_oasis,verbose=verbose)
 
-
-
-# In[ ]:
 
 
 
