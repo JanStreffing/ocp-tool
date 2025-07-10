@@ -1188,20 +1188,22 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [95]
+    resolution_list = [255]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'cubic-octahedral'
+    #truncation_type = 'cubic-octahedral'
+    truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'ab45' #default for cubic-octahedral
+    #exp_name_oifs = 'ab45' #default for cubic-octahedral
+    exp_name_oifs = 'abl7' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
 
     # Name of ocean model grid. 
-    grid_name_oce = 'AMIP'
+    grid_name_oce = 'CORE2'
     cavity = False # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
@@ -1216,12 +1218,16 @@ if __name__ == '__main__':
     input_path_oifs = root_dir+'input/openifs_input_default/'
     input_path_runoff = root_dir+'input/runoff_map_default/'
     input_path_lpjg = root_dir+'input/lpj-guess/'
+    co2_grib_file = os.path.join(input_path_oifs, 'cams_co2_initial.grb')
+    input_path_iniua_file = os.path.join(input_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
 
     # Output file directories.
     output_path_oifs = root_dir+'output/openifs_input_modified/'
     output_path_runoff = root_dir+'output/runoff_map_modified/'
     output_path_oasis = root_dir+'output/oasis_mct3_input/'
     output_path_lpjg = root_dir+'output/lpj-guess/'
+    output_path_iniua_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
+
     
     if grid_name_oce == 'CORE2':
         manual_basin_removal=['caspian-sea', 'black-sea']
@@ -1231,7 +1237,7 @@ if __name__ == '__main__':
     # Find working directory
     dir_path = root_dir
 
-        # Input file directories. Place files in appropriate subfolders or modify
+    # Input file directories. Place files in appropriate subfolders or modify
     if truncation_type == 'cubic-octahedral':
         input_path_reduced_grid = root_dir+'input/gaussian_grids_octahedral_reduced/'
     elif truncation_type == 'linear':
@@ -1289,11 +1295,7 @@ if __name__ == '__main__':
         
         plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=verbose)
         
-
-        # Interpolate CO2 from GRIB file to ICMGG grid
-        co2_grib_file = os.path.join(input_path_oifs, 'cams_co2_initial.grib')
-        icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
-        interpolate_co2_to_icmgg(co2_grib_file, icmgg_file, output_file=icmgg_file, dask=True, workers=4)
+        interpolate_co2_to_icmgg(co2_grib_file, input_path_iniua_file, output_file=output_path_iniua_file, use_dask=True, n_workers=4)
 
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal,verbose=verbose)
