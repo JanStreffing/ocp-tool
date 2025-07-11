@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - eumetsat
 dependencies:
+  - python=3.12
   - netcdf4
   - matplotlib
   - basemap
@@ -14,5 +15,6 @@ dependencies:
   - jupyterlab
   - notebook
   - tqdm
+  - gdal
   - pip:
     - git+https://github.com/FESOM/pyfesom2.git

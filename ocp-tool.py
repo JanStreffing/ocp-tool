@@ -63,6 +63,8 @@ from netCDF4 import Dataset
 from shutil import copy2
 from scipy.spatial import cKDTree
 
+# Import warning suppressions
+from ocp_tool.silence_warnings import *
 from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
 
 #-----------------------------------------------------------------------------
