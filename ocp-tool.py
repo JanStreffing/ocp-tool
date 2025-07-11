@@ -63,6 +63,7 @@ from netCDF4 import Dataset
 from shutil import copy2
 from scipy.spatial import cKDTree
 
+from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
 
 #-----------------------------------------------------------------------------
 # Setup
@@ -1288,15 +1289,18 @@ if __name__ == '__main__':
         
         plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=verbose)
         
+
+        # Interpolate CO2 from GRIB file to ICMGG grid
+        co2_grib_file = os.path.join(input_path_oifs, 'cams_co2_initial.grib')
+        icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
+        interpolate_co2_to_icmgg(co2_grib_file, icmgg_file, output_file=icmgg_file, dask=True, workers=4)
+
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal,verbose=verbose)
 
         modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                           output_path_oasis,verbose=verbose)
 
-
-
-# In[ ]:
 
 
 
