@@ -835,14 +835,26 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
     print("Creating interpolated dataset")
     interpolated_ds = vegin.copy()
 
-    # Adjust the dimensions to match the new grid size
-    print("Adjusting dimensions...")
+    # Create a new empty dataset with the target dimensions
+    print("Creating a new dataset with target dimensions")
+    # First, identify dimensions that need to be resized
+    dims_to_update = {}
     for dim_name, dim_size in interpolated_ds.dims.items():
         if dim_size == len(src_lon):  # Replace source grid size with target grid size
-            print(f"Updating dimension: {dim_name} from {dim_size} to {len(target_lon)}")
-            interpolated_ds = interpolated_ds.rename_dims({dim_name: f"{dim_name}_old"})
-            interpolated_ds = interpolated_ds.assign_coords({f"{dim_name}_old": np.arange(dim_size)})
-            interpolated_ds = interpolated_ds.assign_coords({dim_name: np.arange(len(target_lon))})
+            print(f"Identified dimension for update: {dim_name} from {dim_size} to {len(target_lon)}")
+            dims_to_update[dim_name] = len(target_lon)
+        else:
+            dims_to_update[dim_name] = dim_size
+    
+    # Create a new empty dataset with the correct dimensions
+    new_ds = xr.Dataset()
+    for dim_name, dim_size in dims_to_update.items():
+        new_ds = new_ds.assign_coords({dim_name: np.arange(dim_size)})
+    
+    # Instead of trying to resize the original dataset, we'll recreate it properly
+    print("Preparing dataset with correct dimensions...")
+    # Keep original attributes
+    new_ds.attrs.update(interpolated_ds.attrs)
 
     # Interpolate variables
     print("Interpolating variables...")
@@ -860,7 +872,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
             if src_data.size == 1:
                 print(f"Variable {var} has a single value; replicating across the grid.")
                 interpolated = np.full(target_lon.shape, src_data.item())
-                interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+                # Add to new dataset instead of original
+                new_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
                 continue
 
             # Check size alignment
@@ -871,8 +884,14 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
             # Perform interpolation
             src_data_flat = src_data.ravel()
             interpolated = src_data_flat[idx].reshape(target_lon.shape)
-            interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+            # Add to new dataset instead of original
+            new_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
             print(f"Updated variable: {var}")
+            
+            # Copy variable attributes if they exist
+            if var in vegin and hasattr(vegin[var], 'attrs'):
+                new_ds[var].attrs.update(vegin[var].attrs)
+                
         except Exception as e:
             print(f"Error interpolating variable {var}: {e}")
 
@@ -881,12 +900,14 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
 
     if truncation_type == 'cubic-octahedral':
         vegin_name = 'vegin_TCO' + str(NN-1) + '.nc'
-    elif truncation_type == 'linear':
-        vegin_name = 'vegin_TL' + str(NN*2-1) + '.nc'
+    else:
+        vegin_name = 'vegin_TL' + str(NN) + '.nc'
 
-    interpolated_ds.to_netcdf(f"{output_path_lpjg}/"+vegin_name, mode="w")
+    vegin_out_path = os.path.join(output_path_oifs, vegin_name)
+    print(f"Writing interpolated dataset to {vegin_out_path}")
+    new_ds.to_netcdf(vegin_out_path)
 
-    print(f"Interpolated data successfully saved to {output_path_lpjg}/"+vegin_name)
+    print(f"Interpolated data successfully saved to {vegin_out_path}")
 
     # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
     ifs_grid = f"TCO{res_num}" if truncation_type == "cubic-octahedral" else f"TL{res_num}"
@@ -1293,7 +1314,7 @@ if __name__ == '__main__':
         # Interpolate CO2 from GRIB file to ICMGG grid
         co2_grib_file = os.path.join(input_path_oifs, 'cams_co2_initial.grib')
         icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
-        interpolate_co2_to_icmgg(co2_grib_file, icmgg_file, output_file=icmgg_file, dask=True, workers=4)
+        interpolate_co2_to_icmgg(co2_grib_file, icmgg_file, output_file=icmgg_file, use_dask=True, n_workers=4)
 
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal,verbose=verbose)
