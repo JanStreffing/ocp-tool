@@ -383,7 +383,8 @@ def calculate_area(center_lons, numlons_list, dlon_list, lat_list,verbose=False)
     return(gridcell_area)
 
 
-def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path, interp_res = 'r3600x1801', 
+def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path, 
+                  out_path_oasis, interp_res = 'r3600x1801', 
                   cavity=False, force_overwrite_griddes=False, verbose=False):
     
     print(longline)
@@ -408,6 +409,7 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path, interp_
         grid = pf.read_fesom_ascii_grid(griddir=griddir, cavity=cavity)
         pf.write_mesh_to_netcdf(grid, ofile=input_path_oce+'/mesh.nc', overwrite=True, cavity=cavity)
         cmd = './prep_fesom.sh '+input_path_oce+'/mesh.nc'+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
+        pf.write_fesom_oasis_files(grid, output_dir=out_path_oasis, prefix='feom', overwrite=False)
     print(longline)
     print (' Using the following command to generate OpenIFS lsm based on FESOM mesh description file:')
     print(cmd)
@@ -1326,19 +1328,21 @@ if __name__ == '__main__':
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
     fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/core2_griddes_nodes.nc'
-    force_overwrite_griddes = False
+    force_overwrite_griddes = True
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
     input_path_oifs = root_dir+'input/openifs_input_default/'
     input_path_runoff = root_dir+'input/runoff_map_default/'
     input_path_lpjg = root_dir+'input/lpj-guess/'
+    co2_grib_file = os.path.join(input_path_oifs, 'cams_co2_initial.grib')
 
     # Output file directories.
     output_path_oifs = root_dir+'output/openifs_input_modified/'
     output_path_runoff = root_dir+'output/runoff_map_modified/'
     output_path_oasis = root_dir+'output/oasis_mct3_input/'
     output_path_lpjg = root_dir+'output/lpj-guess/'
-    
+    icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
+
     if grid_name_oce == 'CORE2':
         manual_basin_removal=['caspian-sea', 'black-sea']
     else:
@@ -1367,8 +1371,9 @@ if __name__ == '__main__':
                                  truncation_type,exp_name_oifs=exp_name_oifs,verbose=verbose)
 
         if grid_name_oce != 'AMIP':
-            fesom_grid_sorted = read_fesom_grid(input_path_oce ,grid_name_oce, fesom_grid_file_path ,interp_res, 
-                                              cavity=cavity, force_overwrite_griddes=force_overwrite_griddes, 
+            fesom_grid_sorted = read_fesom_grid(input_path_oce ,grid_name_oce, fesom_grid_file_path, 
+                                              output_path_oasis, interp_res, cavity=cavity, 
+                                              force_overwrite_griddes=force_overwrite_griddes, 
                                               verbose=verbose)
         if grid_name_oce == 'AMIP':
             print(' Skipped reading FESOM mesh, because we are in AMIP mode')
@@ -1405,10 +1410,6 @@ if __name__ == '__main__':
         
         plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=verbose)
         
-
-        # Interpolate CO2 from GRIB file to ICMGG grid
-        co2_grib_file = os.path.join(input_path_oifs, 'cams_co2_initial.grib')
-        icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
         interpolate_co2_to_icmgg(co2_grib_file, icmgg_file, output_file=icmgg_file, use_dask=True, n_workers=4)
 
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
