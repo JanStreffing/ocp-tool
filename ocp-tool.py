@@ -681,6 +681,8 @@ def process_lsm(res_num, truncation_type, input_path_oifs, output_path_oifs,
 def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg, output_path_lpjg, 
                       center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lsm_binary_a, 
                       lsm_binary_l , lsm_binary_r, NN, input_path_runoff, input_path_oifs=None, output_path_oifs=None, exp_name_oifs=None, verbose=False):
+    # Import netCDF4.Dataset here to avoid UnboundLocalError
+    from netCDF4 import Dataset
     '''
     This function writes the binary masks, areas and grids files for
     oasis3-mct
@@ -837,14 +839,26 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
     print("Creating interpolated dataset")
     interpolated_ds = vegin.copy()
 
-    # Adjust the dimensions to match the new grid size
-    print("Adjusting dimensions...")
+    # Create a new empty dataset with the target dimensions
+    print("Creating a new dataset with target dimensions")
+    # First, identify dimensions that need to be resized
+    dims_to_update = {}
     for dim_name, dim_size in interpolated_ds.dims.items():
         if dim_size == len(src_lon):  # Replace source grid size with target grid size
-            print(f"Updating dimension: {dim_name} from {dim_size} to {len(target_lon)}")
-            interpolated_ds = interpolated_ds.rename_dims({dim_name: f"{dim_name}_old"})
-            interpolated_ds = interpolated_ds.assign_coords({f"{dim_name}_old": np.arange(dim_size)})
-            interpolated_ds = interpolated_ds.assign_coords({dim_name: np.arange(len(target_lon))})
+            print(f"Identified dimension for update: {dim_name} from {dim_size} to {len(target_lon)}")
+            dims_to_update[dim_name] = len(target_lon)
+        else:
+            dims_to_update[dim_name] = dim_size
+    
+    # Create a new empty dataset with the correct dimensions
+    new_ds = xr.Dataset()
+    for dim_name, dim_size in dims_to_update.items():
+        new_ds = new_ds.assign_coords({dim_name: np.arange(dim_size)})
+    
+    # Instead of trying to resize the original dataset, we'll recreate it properly
+    print("Preparing dataset with correct dimensions...")
+    # Keep original attributes
+    new_ds.attrs.update(interpolated_ds.attrs)
 
     # Interpolate variables
     print("Interpolating variables...")
@@ -862,7 +876,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
             if src_data.size == 1:
                 print(f"Variable {var} has a single value; replicating across the grid.")
                 interpolated = np.full(target_lon.shape, src_data.item())
-                interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+                # Add to new dataset instead of original
+                new_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
                 continue
 
             # Check size alignment
@@ -873,22 +888,123 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
             # Perform interpolation
             src_data_flat = src_data.ravel()
             interpolated = src_data_flat[idx].reshape(target_lon.shape)
-            interpolated_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+            # Add to new dataset instead of original
+            new_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
             print(f"Updated variable: {var}")
+            
+            # Copy variable attributes if they exist
+            if var in vegin and hasattr(vegin[var], 'attrs'):
+                new_ds[var].attrs.update(vegin[var].attrs)
+                
         except Exception as e:
             print(f"Error interpolating variable {var}: {e}")
 
     # Save the modified dataset
     print("Saving interpolated dataset")
 
+    # Use correct naming convention based on truncation type
     if truncation_type == 'cubic-octahedral':
         vegin_name = 'vegin_TCO' + str(NN-1) + '.nc'
     elif truncation_type == 'linear':
+        # For linear truncation, use TLxxx format with proper numbering
         vegin_name = 'vegin_TL' + str(NN*2-1) + '.nc'
 
-    interpolated_ds.to_netcdf(f"{output_path_lpjg}/"+vegin_name, mode="w")
+    vegin_out_path = os.path.join(output_path_lpjg, vegin_name)
+    print(f"Writing interpolated dataset to {vegin_out_path} in NetCDF3_64BIT_OFFSET format")
+    
+    # Directly write to NetCDF3_64BIT_OFFSET format for oasis3mct4 compatibility
+    try:
+        # Create output file in NetCDF3_64BIT_OFFSET format
+        nc_out = Dataset(vegin_out_path, "w", format="NETCDF3_64BIT_OFFSET")
+        
+        # Create dimensions
+        for dim_name, dim_size in new_ds.dims.items():
+            print(f"Creating dimension: {dim_name}, size={dim_size}")
+            nc_out.createDimension(dim_name, size=dim_size)
+        
+        # Copy global attributes
+        print("Copying global attributes...")
+        for attr_name, attr_value in new_ds.attrs.items():
+            try:
+                nc_out.setncattr(attr_name, attr_value)
+            except Exception as e:
+                print(f"Warning: Could not copy global attribute {attr_name}: {e}")
+        
+        # Copy variables
+        for var_name, var in new_ds.variables.items():
+            print(f"Processing variable: {var_name}")
+            
+            # Get variable data and metadata
+            var_data = var.values
+            var_dims = var.dims
+            var_dtype = var_data.dtype
+            
+            # Check for incompatible data types and convert if needed
+            if var_dtype == np.float64:
+                out_dtype = 'f8'
+            elif var_dtype == np.float32:
+                out_dtype = 'f4'
+            elif var_dtype == np.int64:
+                # NetCDF3 doesn't support 64-bit integers, so convert to 32-bit
+                out_dtype = 'i4'
+                print(f"Warning: Converting int64 to int32 for {var_name}")
+                var_data = var_data.astype(np.int32)
+            elif var_dtype == np.int32:
+                out_dtype = 'i4'
+            elif var_dtype == np.int16:
+                out_dtype = 'i2'
+            elif var_dtype == np.int8 or var_dtype == np.uint8:
+                out_dtype = 'i1'
+            elif var_dtype == np.bool_:
+                out_dtype = 'i1'
+                print(f"Warning: Converting boolean to int8 for {var_name}")
+                var_data = var_data.astype(np.int8)
+            else:
+                out_dtype = 'f8'  # Default to double precision float
+                var_data = var_data.astype(np.float64)
+            
+            # Create the variable
+            try:
+                # Handle fill value if present
+                fill_value = None
+                if '_FillValue' in var.attrs:
+                    fill_value = var.attrs['_FillValue']
+                    # Convert fill_value to match output data type
+                    if out_dtype.startswith('i') and isinstance(fill_value, float):
+                        fill_value = np.int32(fill_value)
+                    elif out_dtype.startswith('f') and isinstance(fill_value, int):
+                        fill_value = float(fill_value)
+                
+                # Create variable with fill value if specified
+                if fill_value is not None:
+                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims, fill_value=fill_value)
+                else:
+                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims)
+                
+                # Copy variable attributes (except _FillValue which is handled separately)
+                for attr_name, attr_value in var.attrs.items():
+                    if attr_name != '_FillValue':  # Skip _FillValue as it's set during variable creation
+                        try:
+                            var_out.setncattr(attr_name, attr_value)
+                        except Exception as e:
+                            print(f"Warning: Could not copy attribute {attr_name} for {var_name}: {e}")
+                
+                # Copy data
+                var_out[:] = var_data
+                
+            except Exception as e:
+                print(f"Error creating variable {var_name}: {e}")
+        
+        # Close file
+        nc_out.close()
+        print("NetCDF3 file creation complete")
+        
+    except Exception as e:
+        print(f"Error writing NetCDF3 file: {e}")
+        print("Falling back to standard xarray output")
+        new_ds.to_netcdf(vegin_out_path)
 
-    print(f"Interpolated data successfully saved to {output_path_lpjg}/"+vegin_name)
+    print(f"Interpolated data successfully saved to {vegin_out_path}")
 
     # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
     ifs_grid = f"TCO{res_num}" if truncation_type == "cubic-octahedral" else f"TL{res_num}"
@@ -1190,14 +1306,14 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [95]
+    resolution_list = [255]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'cubic-octahedral'
+    truncation_type = 'linear'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'ab45' #default for cubic-octahedral
+    exp_name_oifs = 'abl7' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
