@@ -64,6 +64,7 @@ from shutil import copy2
 from scipy.spatial import cKDTree
 
 from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
+from ocp_tool.co2_emissions import interpolate_co2_emissions_to_icmgg
 
 #-----------------------------------------------------------------------------
 # Setup
@@ -409,7 +410,7 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path,
         grid = pf.read_fesom_ascii_grid(griddir=griddir, cavity=cavity)
         pf.write_mesh_to_netcdf(grid, ofile=input_path_oce+'/mesh.nc', overwrite=True, cavity=cavity)
         cmd = './prep_fesom.sh '+input_path_oce+'/mesh.nc'+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
-        pf.write_fesom_oasis_files(grid, output_dir=out_path_oasis, prefix='feom', overwrite=False)
+        pf.write_fesom_oasis_files(grid, output_dir=out_path_oasis, prefix='feom', overwrite=True)
     print(longline)
     print (' Using the following command to generate OpenIFS lsm based on FESOM mesh description file:')
     print(cmd)
@@ -1335,13 +1336,15 @@ if __name__ == '__main__':
     input_path_runoff = root_dir+'input/runoff_map_default/'
     input_path_lpjg = root_dir+'input/lpj-guess/'
     co2_grib_file = os.path.join(input_path_oifs, 'cams_co2_initial.grib')
+    co2_emissions_grib_file = os.path.join(input_path_oifs, 'cams_co2_emissions.grib')
 
     # Output file directories.
     output_path_oifs = root_dir+'output/openifs_input_modified/'
     output_path_runoff = root_dir+'output/runoff_map_modified/'
     output_path_oasis = root_dir+'output/oasis_mct3_input/'
     output_path_lpjg = root_dir+'output/lpj-guess/'
-    icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
+    icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')
+    icmgg_init_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIT_{grid_name_oce}')
 
     if grid_name_oce == 'CORE2':
         manual_basin_removal=['caspian-sea', 'black-sea']
@@ -1410,7 +1413,12 @@ if __name__ == '__main__':
         
         plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=verbose)
         
+        # Interpolate 3D CO2 concentrations to INIUA file
         interpolate_co2_to_icmgg(co2_grib_file, icmgg_file, output_file=icmgg_file, use_dask=True, n_workers=4)
+        
+        # Interpolate 2D CO2 emissions to INIT file
+        print("\nProcessing CO2 emissions data for INIT file...")
+        interpolate_co2_emissions_to_icmgg(co2_emissions_grib_file, icmgg_init_file, output_file=icmgg_init_file, variable_name='lsm', verbose=verbose)
 
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal,verbose=verbose)
