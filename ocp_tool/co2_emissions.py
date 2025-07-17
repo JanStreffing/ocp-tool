@@ -184,6 +184,16 @@ def interpolate_co2_emissions_to_icmgg(co2_emissions_grib_file, icmgg_init_file,
                         eccodes.codes_set(gid, 'typeOfLevel', template_info['level_type'])
                         eccodes.codes_set_long(gid, 'level', template_info['level'])
                         
+                        # Try to set date to January 1, 1990
+                        try:
+                            eccodes.codes_set_long(gid, 'dataDate', 19900101)
+                        except Exception as e:
+                            if verbose:
+                                print(f"Warning: Could not set dataDate: {e}")
+                                
+                        # Instead of trying to set individual date components which might be read-only,
+                        # we'll verify the date in the final output
+                        
                         # Ensure proper grid definition
                         if eccodes.codes_get(gid, 'gridType') == 'reduced_gg':
                             # For reduced Gaussian grid, we need to set number of points along parallels
