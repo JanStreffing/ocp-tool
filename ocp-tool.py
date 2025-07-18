@@ -64,7 +64,7 @@ from shutil import copy2
 from scipy.spatial import cKDTree
 
 from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
-from ocp_tool.co2_emissions import interpolate_co2_emissions_to_icmgg
+from ocp_tool.field_interpolation import interpolate_2d_fields_to_icmgg
 
 #-----------------------------------------------------------------------------
 # Setup
@@ -487,56 +487,8 @@ def read_lsm(res_num, input_path_oifs, output_path_oifs, exp_name_oifs, num_fiel
 
 
 
-def add_albedo_fields(input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, res_num, input_path_reduced_grid, truncation_type, ifs_grid=None, verbose=False):
-    '''
-    This function adds bare_soil_albedo fields to the ICMGG file
-    It remaps the albedo fields to the target grid before appending to the ICMGG file
-    Uses CDO (Climate Data Operators) for remapping
-    '''
-    # Setup paths and files
-    albedo_file = f"{input_path_oifs}/bare_soil_albedos.grb"
-    output_file_oifs = f"{output_path_oifs}ICMGG{exp_name_oifs}INIT_{grid_name_oce}"
-    temp_file = f"{output_path_oifs}tmp_albedo_remapped.grb"
-    
-    # Check if files exist
-    if not os.path.exists(albedo_file):
-        print(f"Warning: Albedo file not found: {albedo_file}")
-        return False
-    
-    if not os.path.exists(output_file_oifs):
-        print(f"Error: Output ICMGG file not found: {output_file_oifs}")
-        return False
-    
-    print(f"\nAdding bare soil albedo fields to {output_file_oifs}")
-    
-    try:
-        print(f"Remapping albedo fields to match {output_file_oifs} grid")
-        os.system(f"grib_copy -w edition=2 {output_file_oifs} {output_file_oifs}.grib2")
-        os.system(f"cdo griddes {output_file_oifs}.grib2 > griddes.txt")
-        os.system(f"cdo remapnn,griddes.txt {albedo_file} {temp_file}")
-        
-        # Step 3: Append the remapped albedo file to the output ICMGG file
-        if os.path.exists(temp_file):
-            print("Appending remapped albedo fields to ICMGG file")
-            with open(temp_file, 'rb') as src, open(output_file_oifs, 'ab') as dst:
-                dst.write(src.read())
-            
-            # Clean up temporary files
-            os.remove(temp_file)
-            os.remove("griddes.txt")
-            os.remove(f"{output_file_oifs}.grib2")
-            
-            print("Successfully remapped and added albedo fields to ICMGG file")
-            return True
-        else:
-            print(f"Error: Remapping failed, temporary file {temp_file} not created")
-            return False
-            
-    except Exception as e:
-        print(f"Unexpected error adding albedo fields: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+# Note: The add_albedo_fields function has been replaced by the unified interpolate_2d_fields_to_icmgg function
+# in field_interpolation.py which handles both albedo and CO2 emissions fields
 
 
 def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, output_path_lpjg,
@@ -1009,8 +961,13 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
 
     # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
     ifs_grid = f"TCO{res_num}" if truncation_type == "cubic-octahedral" else f"TL{res_num}"
-    # Use a default date of 19900101
-    add_albedo_fields(input_path_oifs, output_path_oifs, exp_name_oifs, grid_name_oce, res_num, input_path_reduced_grid, truncation_type, ifs_grid)
+    
+    # Use unified field interpolation approach for albedo fields
+    albedo_file = f"{input_path_oifs}/bare_soil_albedos.grb"
+    icmgg_init_file = f"{output_path_oifs}ICMGG{exp_name_oifs}INIT_{grid_name_oce}"
+    
+    print("\nAdding bare soil albedo fields to ICMGG file using unified approach...")
+    interpolate_2d_fields_to_icmgg(albedo_file, icmgg_init_file, field_type='albedo', verbose=verbose)
 
 
 def modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
@@ -1418,7 +1375,8 @@ if __name__ == '__main__':
         
         # Interpolate 2D CO2 emissions to INIT file
         print("\nProcessing CO2 emissions data for INIT file...")
-        interpolate_co2_emissions_to_icmgg(co2_emissions_grib_file, icmgg_init_file, output_file=icmgg_init_file, variable_name='lsm', verbose=verbose)
+        interpolate_2d_fields_to_icmgg(co2_emissions_grib_file, icmgg_init_file, output_file=icmgg_init_file, 
+                                     variable_name='lsm', field_type='co2_emissions', verbose=verbose)
 
         lons, lats = modify_runoff_map(res_num, input_path_runoff, output_path_runoff,
                                        grid_name_oce, manual_basin_removal,verbose=verbose)
