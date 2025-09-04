@@ -2,7 +2,7 @@ name: Build and Push Containers
 
 on:
   push:
-    branches: [ master, main, awi-hpc/pgierz/feat/ci ]
+    branches: [ master, main ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ master, main ]

@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - awi-hpc/pgierz/feat/ci
   workflow_dispatch:
     inputs:
       tag:
