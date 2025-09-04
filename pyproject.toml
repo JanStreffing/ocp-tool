@@ -93,8 +93,8 @@ tqdm = "*"
 snakemake-minimal = ">=7.0"
 
 [tool.pixi.pypi-dependencies]
-# pyfesom2 has Python <3.10 restriction, skip for now
-# pyfesom2 = { git = "https://github.com/FESOM/pyfesom2.git" }
+# Use modernized pyfesom2 branch with Python 3.11+ support
+pyfesom2 = { git = "https://github.com/FESOM/pyfesom2.git", branch = "modernize-packaging" }
 
 [tool.pixi.feature.jupyter.dependencies]
 jupyterlab = "*"
