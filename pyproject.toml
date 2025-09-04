@@ -10,7 +10,7 @@ authors = [
 ]
 readme = "README.md"
 license = {file = "licence"}
-requires-python = ">=3.8,<3.12"
+requires-python = ">=3.8"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -76,10 +76,10 @@ name = "ocp-tool"
 description = "Tool to generate OASIS files for coupling OpenIFS, FESOM2, and NEMO"
 authors = ["Jan Streffing <jan.streffing@awi.de>"]
 channels = ["conda-forge", "bioconda", "eumetsat"]
-platforms = ["linux-64", "osx-64", "osx-arm64"]
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
-python = ">=3.8,<3.12"
+python = ">=3.8"
 numpy = "*"
 netcdf4 = "*"
 matplotlib = "*"
@@ -93,8 +93,8 @@ tqdm = "*"
 snakemake-minimal = ">=7.0"
 
 [tool.pixi.pypi-dependencies]
-pyfesom2 = { git = "https://github.com/FESOM/pyfesom2.git" }
-ocp-tool = { path = ".", editable = true }
+# pyfesom2 has Python <3.10 restriction, skip for now
+# pyfesom2 = { git = "https://github.com/FESOM/pyfesom2.git" }
 
 [tool.pixi.feature.jupyter.dependencies]
 jupyterlab = "*"
