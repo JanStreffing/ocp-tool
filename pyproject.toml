@@ -31,7 +31,6 @@ dependencies = [
     "pandas",
     "pyyaml",
     "tqdm",
-    "pyfesom2 @ git+https://github.com/FESOM/pyfesom2.git",
 ]
 dynamic = ["version"]
 
