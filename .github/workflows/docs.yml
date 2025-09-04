@@ -2,7 +2,7 @@ name: Documentation
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master, main, awi-hpc/pgierz/feat/ci ]
     paths:
       - 'docs/**'
       - '**.md'
