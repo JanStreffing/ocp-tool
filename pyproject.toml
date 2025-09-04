@@ -75,7 +75,7 @@ version = {attr = "ocp_tool.__version__"}
 name = "ocp-tool"
 description = "Tool to generate OASIS files for coupling OpenIFS, FESOM2, and NEMO"
 authors = ["Jan Streffing <jan.streffing@awi.de>"]
-channels = ["conda-forge", "eumetsat"]
+channels = ["conda-forge", "bioconda", "eumetsat"]
 platforms = ["linux-64", "osx-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
@@ -90,7 +90,7 @@ python-eccodes = "*"
 git = "*"
 pip = "*"
 tqdm = "*"
-snakemake = ">=7.0"
+snakemake-minimal = ">=7.0"
 
 [tool.pixi.pypi-dependencies]
 pyfesom2 = { git = "https://github.com/FESOM/pyfesom2.git" }
@@ -129,7 +129,7 @@ format = "black ocp_tool"
 sort-imports = "isort ocp_tool"
 type-check = "mypy ocp_tool"
 test = "pytest"
-clean-format = { depends_on = ["format", "sort-imports"] }
+clean-format = { depends-on = ["format", "sort-imports"] }
 jupyter = "jupyter lab"
 notebook = "jupyter notebook"
 docs-build = "sphinx-build -W -b html docs/source docs/build/html"
