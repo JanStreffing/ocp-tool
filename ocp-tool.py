@@ -1209,6 +1209,114 @@ def plotting_runoff(drainage, arrival, lons, lats,verbose=False):
     fig1.savefig(figname, format='png')
 
 
+def create_slt_output_for_lpjg(res_num, truncation_type, input_path_oifs, output_path_lpjg, 
+                              exp_name_oifs, grid_name_oce, verbose=False):
+    '''
+    This function creates a separate SLT (soil type) output file for LPJG.
+    It uses eccodes (grib_copy) and CDO commands to extract the soil type field
+    from the ICMGG file and convert it to NetCDF format.
+    
+    Parameters:
+    - res_num: Resolution number (e.g., 95, 255)
+    - truncation_type: 'linear' or 'cubic-octahedral'
+    - input_path_oifs: Path to OpenIFS input files
+    - output_path_lpjg: Path for LPJG output files
+    - exp_name_oifs: OpenIFS experiment name
+    - grid_name_oce: Ocean grid name
+    - verbose: Print detailed information
+    '''
+    
+    print(longline)
+    print(' Creating SLT output file for LPJG')
+    print(longline)
+    
+    # Define input and output file paths
+    input_file_oifs = f"{input_path_oifs}ICMGG{exp_name_oifs}INIT_{grid_name_oce}"
+    
+    # Generate output filename based on truncation type
+    if truncation_type == 'cubic-octahedral':
+        slt_output_name = f'slt_TCO{res_num}.nc'
+    elif truncation_type == 'linear':
+        slt_output_name = f'slt_TL{res_num}.nc'
+    else:
+        raise ValueError(f"Unknown truncation type: {truncation_type}")
+    
+    slt_output_path = os.path.join(output_path_lpjg, slt_output_name)
+    temp_grib_file = f"{output_path_lpjg}temp_slt_var43.grb"
+    
+    # Check if input file exists
+    if not os.path.exists(input_file_oifs):
+        print(f"Error: Input ICMGG file not found: {input_file_oifs}")
+        return False
+    
+    try:
+        print(f"Extracting SLT field (variable 43) from {input_file_oifs}")
+        
+        # Step 1: Extract SLT field (variable 43) using grib_copy
+        # This extracts the soil type field from the ICMGG file
+        cmd_extract = f"grib_copy -w shortName=slt {input_file_oifs} {temp_grib_file}"
+        if verbose:
+            print(f"Running: {cmd_extract}")
+        
+        result = os.system(cmd_extract)
+        if result != 0:
+            print(f"Error: grib_copy command failed with exit code {result}")
+            return False
+        
+        # Check if temporary file was created
+        if not os.path.exists(temp_grib_file):
+            print(f"Error: Temporary GRIB file not created: {temp_grib_file}")
+            return False
+        
+        print(f"Converting GRIB to NetCDF: {slt_output_path}")
+        
+        # Step 2: Convert GRIB to NetCDF using CDO
+        # This converts the extracted SLT field to NetCDF format
+        cmd_convert = f"cdo -f nc copy {temp_grib_file} {slt_output_path}"
+        if verbose:
+            print(f"Running: {cmd_convert}")
+        
+        result = os.system(cmd_convert)
+        if result != 0:
+            print(f"Error: cdo command failed with exit code {result}")
+            # Clean up temporary file
+            if os.path.exists(temp_grib_file):
+                os.remove(temp_grib_file)
+            return False
+        
+        # Clean up temporary file
+        if os.path.exists(temp_grib_file):
+            os.remove(temp_grib_file)
+            if verbose:
+                print(f"Removed temporary file: {temp_grib_file}")
+        
+        # Verify output file was created
+        if os.path.exists(slt_output_path):
+            print(f"Successfully created SLT file: {slt_output_path}")
+            
+            # Print some information about the created file
+            if verbose:
+                print(f"File size: {os.path.getsize(slt_output_path)} bytes")
+                # Use ncdump to show header information
+                os.system(f"ncdump -h {slt_output_path}")
+            
+            return True
+        else:
+            print(f"Error: Output NetCDF file was not created: {slt_output_path}")
+            return False
+            
+    except Exception as e:
+        print(f"Unexpected error creating SLT file: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Clean up temporary file in case of error
+        if os.path.exists(temp_grib_file):
+            os.remove(temp_grib_file)
+        
+        return False
+
+
 def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                       output_path_oasis,verbose=False):
     '''
@@ -1328,7 +1436,7 @@ if __name__ == '__main__':
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
     fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/core2_griddes_nodes.nc'
-    force_overwrite_griddes = True
+    force_overwrite_griddes = False
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
     input_path_oifs = root_dir+'input/openifs_input_default/'
@@ -1417,6 +1525,10 @@ if __name__ == '__main__':
 
         modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                           output_path_oasis,verbose=verbose)
+        
+        # Create SLT output file for LPJG
+        create_slt_output_for_lpjg(res_num, truncation_type, output_path_oifs, output_path_lpjg,
+                                  exp_name_oifs, grid_name_oce, verbose=verbose)
 
 
 
