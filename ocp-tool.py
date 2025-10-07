@@ -409,7 +409,7 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path,
         grid = pf.read_fesom_ascii_grid(griddir=griddir, cavity=cavity)
         pf.write_mesh_to_netcdf(grid, ofile=input_path_oce+'/mesh.nc', overwrite=True, cavity=cavity)
         cmd = './prep_fesom.sh '+input_path_oce+'/mesh.nc'+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
-        pf.write_fesom_oasis_files(grid, output_dir=out_path_oasis, prefix='feom', overwrite=False)
+        #pf.write_fesom_oasis_files(grid, output_dir=out_path_oasis, prefix='feom', overwrite=False)
     print(longline)
     print (' Using the following command to generate OpenIFS lsm based on FESOM mesh description file:')
     print(cmd)
@@ -1302,32 +1302,32 @@ if __name__ == '__main__':
     Main program in which the tool configuration and function calls are located
     Please configure as needed.
     '''
-    verbose=False
+    verbose=True
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [255]
+    resolution_list = [95]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'linear'
+    truncation_type = 'cubic-octahedral'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'abl7' #default for cubic-octahedral
+    exp_name_oifs = 'ab45' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
 
     # Name of ocean model grid. 
-    grid_name_oce = 'CORE2'
-    cavity = False # Does this mesh have ice cavities?
+    grid_name_oce = 'CORE2ice'
+    cavity = True # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
-    interp_res = 'r360x181'
-    root_dir = '/work/ab0246/a270092/software/ocp-tool/'
+    interp_res = 'r3600x1801'
+    root_dir = '/home/a/a270186/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/core2_griddes_nodes.nc'
+    fesom_grid_file_path = '/work/ab0995/a270186/model_inputs/fesom2/mesh/CORE2ice/mesh.nc'
     force_overwrite_griddes = True
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
@@ -1343,7 +1343,7 @@ if __name__ == '__main__':
     output_path_lpjg = root_dir+'output/lpj-guess/'
     icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')        
 
-    if grid_name_oce == 'CORE2':
+    if (grid_name_oce == 'CORE2') or (grid_name_oce == 'CORE2ice'):
         manual_basin_removal=['caspian-sea', 'black-sea']
     else:
         manual_basin_removal=['caspian-sea']
