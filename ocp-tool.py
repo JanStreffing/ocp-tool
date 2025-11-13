@@ -411,6 +411,7 @@ def read_fesom_grid(input_path_oce, grid_name_oce, fesom_grid_file_path,
         pf.write_mesh_to_netcdf(grid, ofile=input_path_oce+'/mesh.nc', overwrite=True, cavity=cavity)
         cmd = './prep_fesom.sh '+input_path_oce+'/mesh.nc'+' '+grid_name_oce+' '+interp_res+' ../openifs_input_default/ICMGG'+exp_name_oifs+'INIT '+str(cavity)
         pf.write_fesom_oasis_files(grid, output_dir=out_path_oasis, prefix='feom', overwrite=True)
+
     print(longline)
     print (' Using the following command to generate OpenIFS lsm based on FESOM mesh description file:')
     print(cmd)
@@ -1167,6 +1168,114 @@ def plotting_runoff(drainage, arrival, lons, lats,verbose=False):
     fig1.savefig(figname, format='png')
 
 
+def create_slt_output_for_lpjg(res_num, truncation_type, input_path_oifs, output_path_lpjg, 
+                              exp_name_oifs, grid_name_oce, verbose=False):
+    '''
+    This function creates a separate SLT (soil type) output file for LPJG.
+    It uses eccodes (grib_copy) and CDO commands to extract the soil type field
+    from the ICMGG file and convert it to NetCDF format.
+    
+    Parameters:
+    - res_num: Resolution number (e.g., 95, 255)
+    - truncation_type: 'linear' or 'cubic-octahedral'
+    - input_path_oifs: Path to OpenIFS input files
+    - output_path_lpjg: Path for LPJG output files
+    - exp_name_oifs: OpenIFS experiment name
+    - grid_name_oce: Ocean grid name
+    - verbose: Print detailed information
+    '''
+    
+    print(longline)
+    print(' Creating SLT output file for LPJG')
+    print(longline)
+    
+    # Define input and output file paths
+    input_file_oifs = f"{input_path_oifs}ICMGG{exp_name_oifs}INIT_{grid_name_oce}"
+    
+    # Generate output filename based on truncation type
+    if truncation_type == 'cubic-octahedral':
+        slt_output_name = f'slt_TCO{res_num}.nc'
+    elif truncation_type == 'linear':
+        slt_output_name = f'slt_TL{res_num}.nc'
+    else:
+        raise ValueError(f"Unknown truncation type: {truncation_type}")
+    
+    slt_output_path = os.path.join(output_path_lpjg, slt_output_name)
+    temp_grib_file = f"{output_path_lpjg}temp_slt_var43.grb"
+    
+    # Check if input file exists
+    if not os.path.exists(input_file_oifs):
+        print(f"Error: Input ICMGG file not found: {input_file_oifs}")
+        return False
+    
+    try:
+        print(f"Extracting SLT field (variable 43) from {input_file_oifs}")
+        
+        # Step 1: Extract SLT field (variable 43) using grib_copy
+        # This extracts the soil type field from the ICMGG file
+        cmd_extract = f"grib_copy -w shortName=slt {input_file_oifs} {temp_grib_file}"
+        if verbose:
+            print(f"Running: {cmd_extract}")
+        
+        result = os.system(cmd_extract)
+        if result != 0:
+            print(f"Error: grib_copy command failed with exit code {result}")
+            return False
+        
+        # Check if temporary file was created
+        if not os.path.exists(temp_grib_file):
+            print(f"Error: Temporary GRIB file not created: {temp_grib_file}")
+            return False
+        
+        print(f"Converting GRIB to NetCDF: {slt_output_path}")
+        
+        # Step 2: Convert GRIB to NetCDF using CDO
+        # This converts the extracted SLT field to NetCDF format
+        cmd_convert = f"cdo -f nc copy {temp_grib_file} {slt_output_path}"
+        if verbose:
+            print(f"Running: {cmd_convert}")
+        
+        result = os.system(cmd_convert)
+        if result != 0:
+            print(f"Error: cdo command failed with exit code {result}")
+            # Clean up temporary file
+            if os.path.exists(temp_grib_file):
+                os.remove(temp_grib_file)
+            return False
+        
+        # Clean up temporary file
+        if os.path.exists(temp_grib_file):
+            os.remove(temp_grib_file)
+            if verbose:
+                print(f"Removed temporary file: {temp_grib_file}")
+        
+        # Verify output file was created
+        if os.path.exists(slt_output_path):
+            print(f"Successfully created SLT file: {slt_output_path}")
+            
+            # Print some information about the created file
+            if verbose:
+                print(f"File size: {os.path.getsize(slt_output_path)} bytes")
+                # Use ncdump to show header information
+                os.system(f"ncdump -h {slt_output_path}")
+            
+            return True
+        else:
+            print(f"Error: Output NetCDF file was not created: {slt_output_path}")
+            return False
+            
+    except Exception as e:
+        print(f"Unexpected error creating SLT file: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Clean up temporary file in case of error
+        if os.path.exists(temp_grib_file):
+            os.remove(temp_grib_file)
+        
+        return False
+
+
 def modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                       output_path_oasis,verbose=False):
     '''
@@ -1260,32 +1369,32 @@ if __name__ == '__main__':
     Main program in which the tool configuration and function calls are located
     Please configure as needed.
     '''
-    verbose=False
+    verbose=True
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [255]
+    resolution_list = [95]
 
     # Choose type of trucation. linear or cubic-octahedral
-    truncation_type = 'linear'
+    truncation_type = 'cubic-octahedral'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'abl7' #default for cubic-octahedral
+    exp_name_oifs = 'ab45' #default for cubic-octahedral
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
 
     # Name of ocean model grid. 
-    grid_name_oce = 'CORE2'
-    cavity = False # Does this mesh have ice cavities?
+    grid_name_oce = 'CORE2ice'
+    cavity = True # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
-    interp_res = 'r360x181'
-    root_dir = '/work/ab0246/a270092/software/ocp-tool/'
+    interp_res = 'r3600x1801'
+    root_dir = '/home/a/a270186/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/core2_griddes_nodes.nc'
+    fesom_grid_file_path = '/work/ab0995/a270186/model_inputs/fesom2/mesh/CORE2ice/mesh.nc'
     force_overwrite_griddes = True
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
@@ -1303,7 +1412,7 @@ if __name__ == '__main__':
     icmgg_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIUA')
     icmgg_init_file = os.path.join(output_path_oifs, f'ICMGG{exp_name_oifs}INIT_{grid_name_oce}')
 
-    if grid_name_oce == 'CORE2':
+    if (grid_name_oce == 'CORE2') or (grid_name_oce == 'CORE2ice'):
         manual_basin_removal=['caspian-sea', 'black-sea']
     else:
         manual_basin_removal=['caspian-sea']
@@ -1383,6 +1492,10 @@ if __name__ == '__main__':
 
         modify_runoff_lsm(res_num, grid_name_oce, manual_basin_removal, lons, lats,
                           output_path_oasis,verbose=verbose)
+        
+        # Create SLT output file for LPJG
+        create_slt_output_for_lpjg(res_num, truncation_type, output_path_oifs, output_path_lpjg,
+                                  exp_name_oifs, grid_name_oce, verbose=verbose)
 
 
 
