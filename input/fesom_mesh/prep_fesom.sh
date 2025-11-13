@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Initialize module system for HPC environments
+if [ -f /etc/profile.d/modules.sh ]; then
+    source /etc/profile.d/modules.sh
+elif [ -f /usr/share/Modules/init/bash ]; then
+    source /usr/share/Modules/init/bash
+fi
 
 # Reading command line arguments
 mesh_file=$1
@@ -25,13 +31,20 @@ fi
 
 
 # Check if cdo and nco are in PATH
+echo "Checking for required tools..."
 if ! command -v cdo &> /dev/null; then
     echo "cdo is not found in PATH. Loading module..."
     module load cdo
+    echo "After loading: cdo is at $(which cdo 2>/dev/null || echo 'STILL NOT FOUND')"
+else
+    echo "cdo found at $(which cdo)"
 fi
-if ! command -v nco &> /dev/null; then
-    echo "nco is not found in PATH. Loading module..."
+if ! command -v ncap2 &> /dev/null; then
+    echo "ncap2 (nco) is not found in PATH. Loading module..."
     module load nco
+    echo "After loading: ncap2 is at $(which ncap2 2>/dev/null || echo 'STILL NOT FOUND')"
+else
+    echo "ncap2 found at $(which ncap2)"
 fi
 
 # Cleanup to avoid HDF5 error warning while overwriting
@@ -43,7 +56,9 @@ rm -f cell_area_times_cav_nod_mask.nc ${mesh_name}_regular.nc  ${mesh_name}_oce.
 # If with cavity, ensure cell_area for atm<->oce exchange = fill_value over ice shelf region
 if [ "${cavity,,}" = "true" ]; then #forcing lower case
   cdo -selvar,cell_area ${mesh_file} cell_area.nc
-  cdo chname,cav_nod_mask,cell_area -selvar,cav_nod_mask ${mesh_file} cav_nod_mask.nc
+  # Use ncks + ncrename instead of cdo chname due to CDO segfault issue
+  ncks -v cav_nod_mask ${mesh_file} cav_nod_mask.nc
+  ncrename -v cav_nod_mask,cell_area cav_nod_mask.nc
   
   ncap2 -O -s 'cell_area = 1 - cell_area' cav_nod_mask.nc cav_nod_mask_step1.nc
   ncap2 -O -s 'where(cell_area<0.5) cell_area=-1;' cav_nod_mask_step1.nc cav_nod_mask_step2.nc
