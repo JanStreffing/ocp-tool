@@ -56,13 +56,30 @@ rm -f cell_area_times_cav_nod_mask.nc ${mesh_name}_regular.nc  ${mesh_name}_oce.
 # If with cavity, ensure cell_area for atm<->oce exchange = fill_value over ice shelf region
 if [ "${cavity,,}" = "true" ]; then #forcing lower case
   cdo -selvar,cell_area ${mesh_file} cell_area.nc
-  # Use ncks + ncrename instead of cdo chname due to CDO segfault issue
-  ncks -v cav_nod_mask ${mesh_file} cav_nod_mask.nc
-  ncrename -v cav_nod_mask,cell_area cav_nod_mask.nc
   
-  ncap2 -O -s 'cell_area = 1 - cell_area' cav_nod_mask.nc cav_nod_mask_step1.nc
-  ncap2 -O -s 'where(cell_area<0.5) cell_area=-1;' cav_nod_mask_step1.nc cav_nod_mask_step2.nc
-  cdo mul cell_area.nc cav_nod_mask_step2.nc cell_area_times_cav_nod_mask.nc
+  # Check if cav_nod_mask exists and has valid values
+  if ncks -v cav_nod_mask ${mesh_file} cav_nod_mask_temp.nc 2>/dev/null; then
+    # Check if cav_nod_mask has any non-missing values
+    has_valid=$(cdo -s output -fldsum -selvar,cell_area cav_nod_mask_temp.nc 2>/dev/null | awk '{if ($1 != "nan") print "yes"}')
+    rm -f cav_nod_mask_temp.nc
+    
+    if [ "$has_valid" = "yes" ]; then
+      echo "Using cav_nod_mask from mesh file"
+      # Use ncks + ncrename instead of cdo chname due to CDO segfault issue
+      ncks -v cav_nod_mask ${mesh_file} cav_nod_mask.nc
+      ncrename -v cav_nod_mask,cell_area cav_nod_mask.nc
+      
+      ncap2 -O -s 'cell_area = 1 - cell_area' cav_nod_mask.nc cav_nod_mask_step1.nc
+      ncap2 -O -s 'where(cell_area<0.5) cell_area=-1;' cav_nod_mask_step1.nc cav_nod_mask_step2.nc
+      cdo mul cell_area.nc cav_nod_mask_step2.nc cell_area_times_cav_nod_mask.nc
+    else
+      echo "Warning: cav_nod_mask is all missing - treating as no cavities"
+      cp cell_area.nc cell_area_times_cav_nod_mask.nc
+    fi
+  else
+    echo "Warning: cav_nod_mask not found - treating as no cavities"
+    cp cell_area.nc cell_area_times_cav_nod_mask.nc
+  fi
 
   echo "cdo genycon,${regular_resolution} -selname,cell_area -setgrid,${mesh_file} cell_area_times_cav_nod_mask.nc weights_cell_area_${regular_resolution}.nc"
   cdo genycon,${regular_resolution} -selname,cell_area -setgrid,${mesh_file} cell_area_times_cav_nod_mask.nc weights_cell_area_${regular_resolution}.nc
@@ -91,5 +108,5 @@ cdo setmisstoc,1 ${mesh_name}_oce.nc ${mesh_name}_land.nc
 grib_copy -w shortName=skt $oifs_icmgg_file skt.grb
 echo "cdo griddes skt.grb > griddes.txt"
 cdo griddes skt.grb > griddes.txt
-echo "cdo -setgrid,skt.grb -remapdis,griddes.txt ${mesh_name}_land.nc ${mesh_name}_oifs.nc"
-cdo -setgrid,skt.grb -remapdis,griddes.txt ${mesh_name}_land.nc ${mesh_name}_oifs.nc
+echo "cdo -setgrid,skt.grb -remapnn,griddes.txt ${mesh_name}_land.nc ${mesh_name}_oifs.nc"
+cdo -setgrid,skt.grb -remapnn,griddes.txt ${mesh_name}_land.nc ${mesh_name}_oifs.nc
