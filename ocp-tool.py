@@ -766,6 +766,85 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
 
         print(longline)
 
+    def write_netcdf3_file(dataset, output_path, file_label=""):
+        """Helper function to write xarray dataset to NetCDF3_64BIT_OFFSET format."""
+        print(f"Writing {file_label} to {output_path} in NetCDF3_64BIT_OFFSET format")
+        try:
+            nc_out = Dataset(output_path, "w", format="NETCDF3_64BIT_OFFSET")
+            
+            # Create dimensions
+            for dim_name, dim_size in dataset.dims.items():
+                nc_out.createDimension(dim_name, size=dim_size)
+            
+            # Copy global attributes
+            for attr_name, attr_value in dataset.attrs.items():
+                try:
+                    nc_out.setncattr(attr_name, attr_value)
+                except Exception as e:
+                    print(f"Warning: Could not copy global attribute {attr_name}: {e}")
+            
+            # Create variables
+            for var_name, var in dataset.variables.items():
+                var_data = var.values
+                var_dims = var.dims
+                var_dtype = var_data.dtype
+                
+                # Determine output dtype
+                if var_dtype == np.float64:
+                    out_dtype = 'f8'
+                elif var_dtype == np.float32:
+                    out_dtype = 'f4'
+                elif var_dtype == np.int64:
+                    out_dtype = 'i4'
+                    var_data = var_data.astype(np.int32)
+                elif var_dtype == np.int32:
+                    out_dtype = 'i4'
+                elif var_dtype == np.int16:
+                    out_dtype = 'i2'
+                elif var_dtype == np.int8 or var_dtype == np.uint8:
+                    out_dtype = 'i1'
+                elif var_dtype == np.bool_:
+                    out_dtype = 'i1'
+                    var_data = var_data.astype(np.int8)
+                else:
+                    out_dtype = 'f8'
+                    var_data = var_data.astype(np.float64)
+                
+                # Handle fill values
+                fill_value = None
+                if '_FillValue' in var.attrs:
+                    fill_value = var.attrs['_FillValue']
+                    if out_dtype.startswith('i') and isinstance(fill_value, float):
+                        fill_value = np.int32(fill_value)
+                    elif out_dtype.startswith('f') and isinstance(fill_value, int):
+                        fill_value = float(fill_value)
+                
+                # Create variable
+                if fill_value is not None:
+                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims, fill_value=fill_value)
+                else:
+                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims)
+                
+                # Copy attributes
+                for attr_name, attr_value in var.attrs.items():
+                    if attr_name != '_FillValue':
+                        try:
+                            var_out.setncattr(attr_name, attr_value)
+                        except Exception as e:
+                            print(f"Warning: Could not copy attribute {attr_name}: {e}")
+                
+                # Write data
+                var_out[:] = var_data
+            
+            nc_out.close()
+            print(f"NetCDF3 file creation complete for {file_label}")
+            return True
+        except Exception as e:
+            print(f"Error writing NetCDF3 file for {file_label}: {e}")
+            print("Falling back to standard xarray output")
+            dataset.to_netcdf(output_path)
+            return False
+
     # Step 1: Read input files
     print("Read input files")
     vegin_grid = xr.open_dataset(f"{input_path_lpjg}/vegin_grid.nc")
@@ -856,109 +935,40 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
     # Save the modified dataset
     print("Saving interpolated dataset")
 
-    # Use correct naming convention based on truncation type
-    if truncation_type == 'cubic-octahedral':
-        vegin_name = 'vegin_TCO' + str(NN-1) + '.nc'
-    elif truncation_type == 'linear':
-        # For linear truncation, use TLxxx format with proper numbering
-        vegin_name = 'vegin_TL' + str(NN*2-1) + '.nc'
-
-    vegin_out_path = os.path.join(output_path_lpjg, vegin_name)
-    print(f"Writing interpolated dataset to {vegin_out_path} in NetCDF3_64BIT_OFFSET format")
-    
-    # Directly write to NetCDF3_64BIT_OFFSET format for oasis3mct4 compatibility
-    try:
-        # Create output file in NetCDF3_64BIT_OFFSET format
-        nc_out = Dataset(vegin_out_path, "w", format="NETCDF3_64BIT_OFFSET")
-        
-        # Create dimensions
-        for dim_name, dim_size in new_ds.dims.items():
-            print(f"Creating dimension: {dim_name}, size={dim_size}")
-            nc_out.createDimension(dim_name, size=dim_size)
-        
-        # Copy global attributes
-        print("Copying global attributes...")
-        for attr_name, attr_value in new_ds.attrs.items():
-            try:
-                nc_out.setncattr(attr_name, attr_value)
-            except Exception as e:
-                print(f"Warning: Could not copy global attribute {attr_name}: {e}")
-        
-        # Copy variables
-        for var_name, var in new_ds.variables.items():
-            print(f"Processing variable: {var_name}")
-            
-            # Get variable data and metadata
-            var_data = var.values
-            var_dims = var.dims
-            var_dtype = var_data.dtype
-            
-            # Check for incompatible data types and convert if needed
-            if var_dtype == np.float64:
-                out_dtype = 'f8'
-            elif var_dtype == np.float32:
-                out_dtype = 'f4'
-            elif var_dtype == np.int64:
-                # NetCDF3 doesn't support 64-bit integers, so convert to 32-bit
-                out_dtype = 'i4'
-                print(f"Warning: Converting int64 to int32 for {var_name}")
-                var_data = var_data.astype(np.int32)
-            elif var_dtype == np.int32:
-                out_dtype = 'i4'
-            elif var_dtype == np.int16:
-                out_dtype = 'i2'
-            elif var_dtype == np.int8 or var_dtype == np.uint8:
-                out_dtype = 'i1'
-            elif var_dtype == np.bool_:
-                out_dtype = 'i1'
-                print(f"Warning: Converting boolean to int8 for {var_name}")
-                var_data = var_data.astype(np.int8)
-            else:
-                out_dtype = 'f8'  # Default to double precision float
-                var_data = var_data.astype(np.float64)
-            
-            # Create the variable
-            try:
-                # Handle fill value if present
-                fill_value = None
-                if '_FillValue' in var.attrs:
-                    fill_value = var.attrs['_FillValue']
-                    # Convert fill_value to match output data type
-                    if out_dtype.startswith('i') and isinstance(fill_value, float):
-                        fill_value = np.int32(fill_value)
-                    elif out_dtype.startswith('f') and isinstance(fill_value, int):
-                        fill_value = float(fill_value)
-                
-                # Create variable with fill value if specified
-                if fill_value is not None:
-                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims, fill_value=fill_value)
-                else:
-                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims)
-                
-                # Copy variable attributes (except _FillValue which is handled separately)
-                for attr_name, attr_value in var.attrs.items():
-                    if attr_name != '_FillValue':  # Skip _FillValue as it's set during variable creation
-                        try:
-                            var_out.setncattr(attr_name, attr_value)
-                        except Exception as e:
-                            print(f"Warning: Could not copy attribute {attr_name} for {var_name}: {e}")
-                
-                # Copy data
-                var_out[:] = var_data
-                
-            except Exception as e:
-                print(f"Error creating variable {var_name}: {e}")
-        
-        # Close file
-        nc_out.close()
-        print("NetCDF3 file creation complete")
-        
-    except Exception as e:
-        print(f"Error writing NetCDF3 file: {e}")
-        print("Falling back to standard xarray output")
-        new_ds.to_netcdf(vegin_out_path)
-
+    vegin_out_path = os.path.join(output_path_oasis, 'vegin.nc')
+    write_netcdf3_file(new_ds, vegin_out_path, "vegin.nc")
     print(f"Interpolated data successfully saved to {vegin_out_path}")
+
+    # Interpolate co2_a2o.nc and co2_a2v.nc using the same KDTree idx
+    for fname in ['co2_a2o.nc', 'co2_a2v.nc']:
+        input_file = os.path.join(input_path_lpjg, fname)
+        if not os.path.exists(input_file):
+            print(f"\nFile {input_file} not found, skipping.")
+            continue
+
+        print(f"\nInterpolating {fname}...")
+        src_ds = xr.open_dataset(input_file)
+        
+        # Create new dataset with target dimensions
+        dims_to_update = {dim: (len(target_lon) if size == len(src_lon) else size) 
+                          for dim, size in src_ds.dims.items()}
+        co2_ds = xr.Dataset()
+        for dim_name, dim_size in dims_to_update.items():
+            co2_ds = co2_ds.assign_coords({dim_name: np.arange(dim_size)})
+        co2_ds.attrs.update(src_ds.attrs)
+        
+        # Interpolate variables using same idx from vegin
+        for var in src_ds.data_vars:
+            src_data = src_ds[var].values.squeeze()
+            if src_data.size == len(src_lon):
+                interpolated = src_data.ravel()[idx].reshape(target_lon.shape)
+                co2_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+                co2_ds[var].attrs.update(src_ds[var].attrs)
+        
+        # Write using helper function
+        out_path = os.path.join(output_path_oasis, fname)
+        write_netcdf3_file(co2_ds, out_path, fname)
+        print(f"Saved {fname} to {out_path}")
 
     # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
     ifs_grid = f"TCO{res_num}" if truncation_type == "cubic-octahedral" else f"TL{res_num}"
@@ -1386,16 +1396,16 @@ if __name__ == '__main__':
     num_fields = 81
 
     # Name of ocean model grid. 
-    grid_name_oce = 'CORE2ice'
+    grid_name_oce = 'CORE3'
     cavity = True # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r3600x1801'
-    root_dir = '/home/a/a270186/software/ocp-tool/'
+    root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0995/a270186/model_inputs/fesom2/mesh/CORE2ice/mesh.nc'
-    force_overwrite_griddes = True
+    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE3/mesh.nc'
+    force_overwrite_griddes = False
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
     input_path_oifs = root_dir+'input/openifs_input_default/'
