@@ -560,15 +560,6 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, o
                 gribapi.grib_write(gid[i], f)
             gribapi.grib_release(gid[i])
 
-    # Write LPJ-Guess gridlist file
-    if truncation_type == 'linear':
-        gridlist_name = 'gridlist_TL'+str(res_num)+'_'+grid_name_oce+'.txt'
-    elif truncation_type == 'cubic-octahedral':
-        gridlist_name = 'gridlist_TCO'+str(res_num)+'_'+grid_name_oce+'.txt'
-    with open(output_path_lpjg+gridlist_name, "w") as file:
-        # Write coordinates in the format "lat lon"
-        for lat, lon in zip(lsm_lat, lsm_lon):
-            file.write(f"{lat} {lon}\n")
 
 
 def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=False):
@@ -939,8 +930,8 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
     write_netcdf3_file(new_ds, vegin_out_path, "vegin.nc")
     print(f"Interpolated data successfully saved to {vegin_out_path}")
 
-    # Interpolate co2_a2o.nc and co2_a2v.nc using the same KDTree idx
-    for fname in ['co2_a2o.nc', 'co2_a2v.nc']:
+    # Interpolate rst_co2_ao.nc and rst_co2_av.nc using the same KDTree idx
+    for fname in ['rst_co2_ao.nc', 'rst_co2_av.nc']:
         input_file = os.path.join(input_path_lpjg, fname)
         if not os.path.exists(input_file):
             print(f"\nFile {input_file} not found, skipping.")
@@ -948,6 +939,32 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
 
         print(f"\nInterpolating {fname}...")
         src_ds = xr.open_dataset(input_file)
+        
+        # For rst_co2_av.nc: Handle CO2 flux fields as described in notes_on_co2_coupling.txt
+        # LPJ-GUESS sends three fluxes: dcfluxnat, dcfluxant, dnpp
+        # - dcfluxnat does NOT include NPP (reported separately in dnpp)
+        # - Fire (from BLAZE) IS included in dcfluxnat
+        # So we need: GUE_CNAT (nat+fire), GUE_CANT (ant), GUE_CNPP (npp separate)
+        if fname == 'rst_co2_av.nc':
+            # Step 1: Add fire flux (GUE_CFIR) to natural flux (GUE_CNAT)
+            if 'GUE_CFIR' in src_ds.data_vars and 'GUE_CNAT' in src_ds.data_vars:
+                print("  Adding fire flux (GUE_CFIR) to natural flux (GUE_CNAT)...")
+                gue_cnat_with_fire = src_ds['GUE_CNAT'].values + src_ds['GUE_CFIR'].values
+                src_ds['GUE_CNAT'] = (src_ds['GUE_CNAT'].dims, gue_cnat_with_fire)
+                src_ds['GUE_CNAT'].attrs.update(src_ds['GUE_CNAT'].attrs)
+                # Drop the separate fire field - it's now included in GUE_CNAT
+                src_ds = src_ds.drop_vars('GUE_CFIR')
+                print("  Fire flux merged into natural flux; removed separate GUE_CFIR field")
+            
+            # Step 2: Add NPP field (GUE_CNPP) - NPP is separate from nat according to notes
+            # Initialize to zero as restart value; LPJ-GUESS will compute actual NPP
+            if 'GUE_CNPP' not in src_ds.data_vars and 'GUE_CNAT' in src_ds.data_vars:
+                print("  Adding NPP field (GUE_CNPP) - separate from natural flux...")
+                gue_cnpp_data = np.zeros_like(src_ds['GUE_CNAT'].values)
+                src_ds['GUE_CNPP'] = (src_ds['GUE_CNAT'].dims, gue_cnpp_data)
+                src_ds['GUE_CNPP'].attrs['long_name'] = 'Net Primary Production flux'
+                src_ds['GUE_CNPP'].attrs['units'] = 'kg m-2 s-1'
+                print("  Added GUE_CNPP field (initialized to zero)")
         
         # Create new dataset with target dimensions
         dims_to_update = {dim: (len(target_lon) if size == len(src_lon) else size) 
