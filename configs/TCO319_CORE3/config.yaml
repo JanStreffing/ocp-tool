@@ -1,0 +1,50 @@
+# OCP-Tool Configuration
+# OpenIFS Coupling Preparation Tool
+# Configuration: TCO319 + CORE3 (with ice cavities)
+
+# Atmosphere grid settings
+atmosphere:
+  resolution_list: [319]  # TCO319
+  truncation_type: "cubic-octahedral"
+  experiment_name: "abns"  # IMPORTANT: abns for TCO319, ab45 for TCO95
+
+# Ocean grid settings
+ocean:
+  grid_name: "CORE3"
+  has_ice_cavities: true  # CORE3 has ice cavities
+  mesh_file: "/work/ab0246/a270092/input/fesom2/core3/mesh.nc"
+  intermediate_resolution: "r360x181"
+  force_overwrite_griddes: false
+
+# Basin modifications for runoff
+runoff:
+  manual_basin_removal:
+    - "caspian-sea"
+
+# Paths (relative to root_dir or absolute)
+paths:
+  root_dir: "/work/ab0246/a270092/software/ocp-tool/"
+  
+  # Input directories
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+  
+  # Output directories (organized by oifsgrid_fesommesh)
+  output:
+    openifs_modified: "output/TCO319_CORE3/openifs_input_modified/"
+    runoff_modified: "output/TCO319_CORE3/runoff_map_modified/"
+    oasis: "output/TCO319_CORE3/oasis_mct3_input/"
+    lpj_guess: "output/TCO319_CORE3/lpj-guess/"
+    plots: "output/TCO319_CORE3/plots/"
+
+# Processing options
+options:
+  verbose: true
+  parallel_workers: 4
+  use_dask: true
