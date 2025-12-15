@@ -144,12 +144,20 @@ def load_config(config_path: str | Path) -> OCPConfig:
         lpj_guess=resolve_path(raw['paths']['input']['lpj_guess']),
     )
     
+    # Auto-compute output directory name from atmosphere and ocean settings
+    # Format: TCO{resolution}_{ocean_grid} (e.g., TCO95_CORE2, TCO319_CORE3)
+    resolution = raw['atmosphere']['resolution_list'][0]  # Use first resolution
+    ocean_grid = raw['ocean']['grid_name']
+    trunc_prefix = "TCO" if truncation_type == "cubic-octahedral" else "TL"
+    output_subdir = f"{trunc_prefix}{resolution}_{ocean_grid}"
+    
+    output_base = root_dir / "output" / output_subdir
     output_paths = OutputPaths(
-        openifs_modified=resolve_path(raw['paths']['output']['openifs_modified']),
-        runoff_modified=resolve_path(raw['paths']['output']['runoff_modified']),
-        oasis=resolve_path(raw['paths']['output']['oasis']),
-        lpj_guess=resolve_path(raw['paths']['output']['lpj_guess']),
-        plots=resolve_path(raw['paths']['output']['plots']),
+        openifs_modified=output_base / "openifs_input_modified",
+        runoff_modified=output_base / "runoff_map_modified",
+        oasis=output_base / "oasis_mct3_input",
+        lpj_guess=output_base / "lpj-guess",
+        plots=output_base / "plots",
     )
     
     return OCPConfig(
