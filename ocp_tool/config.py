@@ -106,12 +106,18 @@ def load_config(config_path: str | Path) -> OCPConfig:
     Returns:
         OCPConfig dataclass with all configuration
     """
-    config_path = Path(config_path)
+    config_path = Path(config_path).resolve()
     
     with open(config_path, 'r') as f:
         raw = yaml.safe_load(f)
     
-    root_dir = Path(raw['paths']['root_dir'])
+    # Auto-detect root_dir: use config file's parent's parent (configs/ -> root)
+    # or explicit path if provided
+    if 'root_dir' in raw.get('paths', {}) and raw['paths']['root_dir']:
+        root_dir = Path(raw['paths']['root_dir'])
+    else:
+        # Assume config is in <root>/configs/
+        root_dir = config_path.parent.parent
     
     # Determine reduced grid path based on truncation type
     truncation_type = raw['atmosphere']['truncation_type']

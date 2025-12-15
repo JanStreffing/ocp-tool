@@ -19,10 +19,8 @@ runoff:
     - "caspian-sea"
     - "black-sea"
 
-# Paths (relative to root_dir or absolute)
+# Paths (relative to auto-detected root_dir, or absolute)
 paths:
-  root_dir: "/work/ab0246/a270092/software/ocp-tool/"
-  
   # Input directories
   input:
     fesom_mesh: "input/fesom_mesh/"
