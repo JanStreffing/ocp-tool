@@ -554,10 +554,8 @@ def read_fesom_grid_polygon(
     
     # Use matplotlib triangulation for EXACT point location (no search radius)
     from matplotlib.tri import Triangulation
-    from concurrent.futures import ProcessPoolExecutor
-    import multiprocessing
     
-    print(" Building exact triangulation lookup (parallelized)...")
+    print(" Building exact triangulation lookup...")
     
     # Check if triangle has ANY cavity node
     tri_has_cavity = np.any(cav_mask[triag] == 1, axis=1)
@@ -580,15 +578,14 @@ def read_fesom_grid_polygon(
         finder_std = tri_std.get_trifinder()
         tri_indices = finder_std(oifs_lons_std, oifs_lats)
         
-        for i in range(len(oifs_lons)):
-            tri_idx = tri_indices[i]
-            if tri_idx >= 0:
-                if cavity_std[tri_idx]:
-                    fesom_lsm[i] = 1  # Cavity -> land
-                else:
-                    fesom_lsm[i] = 0  # Ocean
+        # Vectorized assignment
+        found = tri_indices >= 0
+        is_cavity = np.zeros(len(oifs_lons), dtype=bool)
+        is_cavity[found] = cavity_std[tri_indices[found]]
+        fesom_lsm[found & ~is_cavity] = 0  # Ocean
+        fesom_lsm[found & is_cavity] = 1   # Cavity -> land
         
-        print(f"   Found {np.sum(tri_indices >= 0)} points in standard triangles")
+        print(f"   Found {np.sum(found)} points in standard triangles")
     except Exception as e:
         print(f" Warning: Standard triangulation failed: {e}")
     
@@ -610,17 +607,15 @@ def read_fesom_grid_polygon(
             
             # Only check points not yet classified as ocean
             unclassified = fesom_lsm == 1
+            unclass_indices = np.where(unclassified)[0]
             tri_indices_dl = finder_dl(oifs_lons_shifted[unclassified], oifs_lats[unclassified])
             
+            # Vectorized assignment
             found_dl = tri_indices_dl >= 0
-            unclass_indices = np.where(unclassified)[0]
-            
-            for j, idx in enumerate(unclass_indices):
-                if found_dl[j]:
-                    if cavity_dl[tri_indices_dl[j]]:
-                        fesom_lsm[idx] = 1
-                    else:
-                        fesom_lsm[idx] = 0
+            found_indices = unclass_indices[found_dl]
+            is_cavity_dl = cavity_dl[tri_indices_dl[found_dl]]
+            fesom_lsm[found_indices[~is_cavity_dl]] = 0  # Ocean
+            fesom_lsm[found_indices[is_cavity_dl]] = 1   # Cavity -> land
             
             print(f"   Found {np.sum(found_dl)} points in dateline triangles")
         except Exception as e:
