@@ -1468,7 +1468,7 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [319]
+    resolution_list = [95]
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'cubic-octahedral'
@@ -1481,11 +1481,11 @@ if __name__ == '__main__':
     num_fields = 81
 
     # Name of ocean model grid. 
-    grid_name_oce = 'CORE3'
+    grid_name_oce = 'CORE2'
     cavity = True # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
-    interp_res = 'r3600x1801'
+    interp_res = 'r360x181'
     root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
