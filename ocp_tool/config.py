@@ -23,7 +23,6 @@ class OceanConfig:
     grid_name: str
     has_ice_cavities: bool
     mesh_file: Path
-    intermediate_resolution: str
     force_overwrite_griddes: bool
 
 
@@ -158,7 +157,6 @@ def load_config(config_path: str | Path) -> OCPConfig:
             grid_name=raw['ocean']['grid_name'],
             has_ice_cavities=raw['ocean']['has_ice_cavities'],
             mesh_file=Path(raw['ocean']['mesh_file']),
-            intermediate_resolution=raw['ocean']['intermediate_resolution'],
             force_overwrite_griddes=raw['ocean']['force_overwrite_griddes'],
         ),
         runoff=RunoffConfig(

@@ -13,7 +13,6 @@ ocean:
   grid_name: "CORE3"
   has_ice_cavities: true  # CORE3 has ice cavities
   mesh_file: "/work/ab0246/a270092/input/fesom2/core3/mesh.nc"
-  intermediate_resolution: "r360x181"
   force_overwrite_griddes: false
 
 # Basin modifications for runoff
