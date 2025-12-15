@@ -1482,14 +1482,14 @@ if __name__ == '__main__':
 
     # Name of ocean model grid. 
     grid_name_oce = 'CORE2'
-    cavity = True # Does this mesh have ice cavities?
+    cavity = False # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r360x181'
     root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE3/mesh.nc'
+    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE2/mesh.nc'
     force_overwrite_griddes = False
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
@@ -1500,7 +1500,7 @@ if __name__ == '__main__':
     co2_emissions_grib_file = os.path.join(input_path_oifs, 'cams_co2_emissions.grib')
 
     # Output file directories.
-    output_path_oifs = root_dir+'output/openifs_input_modified/'
+    output_path_oifs = root_dir+'output/openifs_input_odified/'
     output_path_runoff = root_dir+'output/runoff_map_modified/'
     output_path_oasis = root_dir+'output/oasis_mct3_input/'
     output_path_lpjg = root_dir+'output/lpj-guess/'
