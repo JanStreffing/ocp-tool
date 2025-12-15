@@ -560,15 +560,6 @@ def write_lsm(gribfield_mod, input_path_oifs, output_path_oifs, exp_name_oifs, o
                 gribapi.grib_write(gid[i], f)
             gribapi.grib_release(gid[i])
 
-    # Write LPJ-Guess gridlist file
-    if truncation_type == 'linear':
-        gridlist_name = 'gridlist_TL'+str(res_num)+'_'+grid_name_oce+'.txt'
-    elif truncation_type == 'cubic-octahedral':
-        gridlist_name = 'gridlist_TCO'+str(res_num)+'_'+grid_name_oce+'.txt'
-    with open(output_path_lpjg+gridlist_name, "w") as file:
-        # Write coordinates in the format "lat lon"
-        for lat, lon in zip(lsm_lat, lsm_lon):
-            file.write(f"{lat} {lon}\n")
 
 
 def plotting_lsm(res_num, lsm_binary_l, lsm_binary_a, center_lats, center_lons,verbose=False):
@@ -766,6 +757,85 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
 
         print(longline)
 
+    def write_netcdf3_file(dataset, output_path, file_label=""):
+        """Helper function to write xarray dataset to NetCDF3_64BIT_OFFSET format."""
+        print(f"Writing {file_label} to {output_path} in NetCDF3_64BIT_OFFSET format")
+        try:
+            nc_out = Dataset(output_path, "w", format="NETCDF3_64BIT_OFFSET")
+            
+            # Create dimensions
+            for dim_name, dim_size in dataset.dims.items():
+                nc_out.createDimension(dim_name, size=dim_size)
+            
+            # Copy global attributes
+            for attr_name, attr_value in dataset.attrs.items():
+                try:
+                    nc_out.setncattr(attr_name, attr_value)
+                except Exception as e:
+                    print(f"Warning: Could not copy global attribute {attr_name}: {e}")
+            
+            # Create variables
+            for var_name, var in dataset.variables.items():
+                var_data = var.values
+                var_dims = var.dims
+                var_dtype = var_data.dtype
+                
+                # Determine output dtype
+                if var_dtype == np.float64:
+                    out_dtype = 'f8'
+                elif var_dtype == np.float32:
+                    out_dtype = 'f4'
+                elif var_dtype == np.int64:
+                    out_dtype = 'i4'
+                    var_data = var_data.astype(np.int32)
+                elif var_dtype == np.int32:
+                    out_dtype = 'i4'
+                elif var_dtype == np.int16:
+                    out_dtype = 'i2'
+                elif var_dtype == np.int8 or var_dtype == np.uint8:
+                    out_dtype = 'i1'
+                elif var_dtype == np.bool_:
+                    out_dtype = 'i1'
+                    var_data = var_data.astype(np.int8)
+                else:
+                    out_dtype = 'f8'
+                    var_data = var_data.astype(np.float64)
+                
+                # Handle fill values
+                fill_value = None
+                if '_FillValue' in var.attrs:
+                    fill_value = var.attrs['_FillValue']
+                    if out_dtype.startswith('i') and isinstance(fill_value, float):
+                        fill_value = np.int32(fill_value)
+                    elif out_dtype.startswith('f') and isinstance(fill_value, int):
+                        fill_value = float(fill_value)
+                
+                # Create variable
+                if fill_value is not None:
+                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims, fill_value=fill_value)
+                else:
+                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims)
+                
+                # Copy attributes
+                for attr_name, attr_value in var.attrs.items():
+                    if attr_name != '_FillValue':
+                        try:
+                            var_out.setncattr(attr_name, attr_value)
+                        except Exception as e:
+                            print(f"Warning: Could not copy attribute {attr_name}: {e}")
+                
+                # Write data
+                var_out[:] = var_data
+            
+            nc_out.close()
+            print(f"NetCDF3 file creation complete for {file_label}")
+            return True
+        except Exception as e:
+            print(f"Error writing NetCDF3 file for {file_label}: {e}")
+            print("Falling back to standard xarray output")
+            dataset.to_netcdf(output_path)
+            return False
+
     # Step 1: Read input files
     print("Read input files")
     vegin_grid = xr.open_dataset(f"{input_path_lpjg}/vegin_grid.nc")
@@ -856,113 +926,138 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
     # Save the modified dataset
     print("Saving interpolated dataset")
 
-    # Use correct naming convention based on truncation type
-    if truncation_type == 'cubic-octahedral':
-        vegin_name = 'vegin_TCO' + str(NN-1) + '.nc'
-    elif truncation_type == 'linear':
-        # For linear truncation, use TLxxx format with proper numbering
-        vegin_name = 'vegin_TL' + str(NN*2-1) + '.nc'
-
-    vegin_out_path = os.path.join(output_path_lpjg, vegin_name)
-    print(f"Writing interpolated dataset to {vegin_out_path} in NetCDF3_64BIT_OFFSET format")
-    
-    # Directly write to NetCDF3_64BIT_OFFSET format for oasis3mct4 compatibility
-    try:
-        # Create output file in NetCDF3_64BIT_OFFSET format
-        nc_out = Dataset(vegin_out_path, "w", format="NETCDF3_64BIT_OFFSET")
-        
-        # Create dimensions
-        for dim_name, dim_size in new_ds.dims.items():
-            print(f"Creating dimension: {dim_name}, size={dim_size}")
-            nc_out.createDimension(dim_name, size=dim_size)
-        
-        # Copy global attributes
-        print("Copying global attributes...")
-        for attr_name, attr_value in new_ds.attrs.items():
-            try:
-                nc_out.setncattr(attr_name, attr_value)
-            except Exception as e:
-                print(f"Warning: Could not copy global attribute {attr_name}: {e}")
-        
-        # Copy variables
-        for var_name, var in new_ds.variables.items():
-            print(f"Processing variable: {var_name}")
-            
-            # Get variable data and metadata
-            var_data = var.values
-            var_dims = var.dims
-            var_dtype = var_data.dtype
-            
-            # Check for incompatible data types and convert if needed
-            if var_dtype == np.float64:
-                out_dtype = 'f8'
-            elif var_dtype == np.float32:
-                out_dtype = 'f4'
-            elif var_dtype == np.int64:
-                # NetCDF3 doesn't support 64-bit integers, so convert to 32-bit
-                out_dtype = 'i4'
-                print(f"Warning: Converting int64 to int32 for {var_name}")
-                var_data = var_data.astype(np.int32)
-            elif var_dtype == np.int32:
-                out_dtype = 'i4'
-            elif var_dtype == np.int16:
-                out_dtype = 'i2'
-            elif var_dtype == np.int8 or var_dtype == np.uint8:
-                out_dtype = 'i1'
-            elif var_dtype == np.bool_:
-                out_dtype = 'i1'
-                print(f"Warning: Converting boolean to int8 for {var_name}")
-                var_data = var_data.astype(np.int8)
-            else:
-                out_dtype = 'f8'  # Default to double precision float
-                var_data = var_data.astype(np.float64)
-            
-            # Create the variable
-            try:
-                # Handle fill value if present
-                fill_value = None
-                if '_FillValue' in var.attrs:
-                    fill_value = var.attrs['_FillValue']
-                    # Convert fill_value to match output data type
-                    if out_dtype.startswith('i') and isinstance(fill_value, float):
-                        fill_value = np.int32(fill_value)
-                    elif out_dtype.startswith('f') and isinstance(fill_value, int):
-                        fill_value = float(fill_value)
-                
-                # Create variable with fill value if specified
-                if fill_value is not None:
-                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims, fill_value=fill_value)
-                else:
-                    var_out = nc_out.createVariable(var_name, out_dtype, var_dims)
-                
-                # Copy variable attributes (except _FillValue which is handled separately)
-                for attr_name, attr_value in var.attrs.items():
-                    if attr_name != '_FillValue':  # Skip _FillValue as it's set during variable creation
-                        try:
-                            var_out.setncattr(attr_name, attr_value)
-                        except Exception as e:
-                            print(f"Warning: Could not copy attribute {attr_name} for {var_name}: {e}")
-                
-                # Copy data
-                var_out[:] = var_data
-                
-            except Exception as e:
-                print(f"Error creating variable {var_name}: {e}")
-        
-        # Close file
-        nc_out.close()
-        print("NetCDF3 file creation complete")
-        
-    except Exception as e:
-        print(f"Error writing NetCDF3 file: {e}")
-        print("Falling back to standard xarray output")
-        new_ds.to_netcdf(vegin_out_path)
-
+    vegin_out_path = os.path.join(output_path_oasis, 'vegin.nc')
+    write_netcdf3_file(new_ds, vegin_out_path, "vegin.nc")
     print(f"Interpolated data successfully saved to {vegin_out_path}")
 
-    # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
+    # Interpolate rst_co2_ao.nc and rst_co2_av.nc using the same KDTree idx
+    for fname in ['rst_co2_ao.nc', 'rst_co2_av.nc']:
+        input_file = os.path.join(input_path_lpjg, fname)
+        if not os.path.exists(input_file):
+            print(f"\nFile {input_file} not found, skipping.")
+            continue
+
+        print(f"\nInterpolating {fname}...")
+        src_ds = xr.open_dataset(input_file)
+        
+        # For rst_co2_av.nc: Handle CO2 flux fields as described in notes_on_co2_coupling.txt
+        # LPJ-GUESS sends three fluxes: dcfluxnat, dcfluxant, dnpp
+        # - dcfluxnat does NOT include NPP (reported separately in dnpp)
+        # - Fire (from BLAZE) IS included in dcfluxnat
+        # So we need: GUE_CNAT (nat+fire), GUE_CANT (ant), GUE_CNPP (npp separate)
+        if fname == 'rst_co2_av.nc':
+            # Step 1: Add fire flux (GUE_CFIR) to natural flux (GUE_CNAT)
+            if 'GUE_CFIR' in src_ds.data_vars and 'GUE_CNAT' in src_ds.data_vars:
+                print("  Adding fire flux (GUE_CFIR) to natural flux (GUE_CNAT)...")
+                gue_cnat_with_fire = src_ds['GUE_CNAT'].values + src_ds['GUE_CFIR'].values
+                src_ds['GUE_CNAT'] = (src_ds['GUE_CNAT'].dims, gue_cnat_with_fire)
+                src_ds['GUE_CNAT'].attrs.update(src_ds['GUE_CNAT'].attrs)
+                # Drop the separate fire field - it's now included in GUE_CNAT
+                src_ds = src_ds.drop_vars('GUE_CFIR')
+                print("  Fire flux merged into natural flux; removed separate GUE_CFIR field")
+            
+            # Step 2: Add NPP field (GUE_CNPP) - NPP is separate from nat according to notes
+            # Initialize to zero as restart value; LPJ-GUESS will compute actual NPP
+            if 'GUE_CNPP' not in src_ds.data_vars and 'GUE_CNAT' in src_ds.data_vars:
+                print("  Adding NPP field (GUE_CNPP) - separate from natural flux...")
+                gue_cnpp_data = np.zeros_like(src_ds['GUE_CNAT'].values)
+                src_ds['GUE_CNPP'] = (src_ds['GUE_CNAT'].dims, gue_cnpp_data)
+                src_ds['GUE_CNPP'].attrs['long_name'] = 'Net Primary Production flux'
+                src_ds['GUE_CNPP'].attrs['units'] = 'kg m-2 s-1'
+                print("  Added GUE_CNPP field (initialized to zero)")
+        
+        # Create new dataset with target dimensions
+        dims_to_update = {dim: (len(target_lon) if size == len(src_lon) else size) 
+                          for dim, size in src_ds.dims.items()}
+        co2_ds = xr.Dataset()
+        for dim_name, dim_size in dims_to_update.items():
+            co2_ds = co2_ds.assign_coords({dim_name: np.arange(dim_size)})
+        co2_ds.attrs.update(src_ds.attrs)
+        
+        # Interpolate variables using same idx from vegin
+        for var in src_ds.data_vars:
+            src_data = src_ds[var].values.squeeze()
+            if src_data.size == len(src_lon):
+                interpolated = src_data.ravel()[idx].reshape(target_lon.shape)
+                co2_ds[var] = (["y", "x"], interpolated[np.newaxis, :])
+                co2_ds[var].attrs.update(src_ds[var].attrs)
+        
+        # Write using helper function
+        out_path = os.path.join(output_path_oasis, fname)
+        write_netcdf3_file(co2_ds, out_path, fname)
+        print(f"Saved {fname} to {out_path}")
+
+    # Define target grid name for output files
     ifs_grid = f"TCO{res_num}" if truncation_type == "cubic-octahedral" else f"TL{res_num}"
     
+    # Interpolate nitrogen deposition files using the same KDTree idx
+    # These files are on TL255 grid (same as vegin) and have many timesteps
+    ndep_files = ['drynhx_TL255_hist_d1.nc', 'wetnhx_TL255_hist_d1.nc', 
+                  'drynoy_TL255_hist_d1.nc', 'wetnoy_TL255_hist_d1.nc']
+    
+    for ndep_fname in ndep_files:
+        ndep_input = os.path.join(input_path_lpjg, ndep_fname)
+        if not os.path.exists(ndep_input):
+            print(f"\nNitrogen deposition file {ndep_input} not found, skipping.")
+            continue
+        
+        print(f"\nInterpolating nitrogen deposition file {ndep_fname}...")
+        ndep_ds = xr.open_dataset(ndep_input)
+        
+        # Get the variable name (drynhx, wetnhx, drynoy, or wetnoy)
+        data_vars = [v for v in ndep_ds.data_vars if v not in ['time_bnds', 'lon_bnds', 'lat_bnds']]
+        if not data_vars:
+            print(f"  No data variables found in {ndep_fname}, skipping.")
+            ndep_ds.close()
+            continue
+        
+        var_name = data_vars[0]
+        print(f"  Interpolating variable: {var_name}")
+        
+        # Get source data - shape is (time, ncells)
+        src_data = ndep_ds[var_name].values
+        n_times = src_data.shape[0]
+        print(f"  Number of timesteps: {n_times}")
+        
+        # Apply nearest-neighbor interpolation using the same idx from vegin
+        # idx maps each target point to its nearest source point
+        interpolated_data = src_data[:, idx]  # (time, target_ncells)
+        
+        # Create output dataset
+        ndep_out = xr.Dataset()
+        
+        # Copy time coordinate
+        ndep_out['time'] = ndep_ds['time']
+        if 'time_bnds' in ndep_ds:
+            ndep_out['time_bnds'] = ndep_ds['time_bnds']
+        
+        # Add interpolated variable with target grid coordinates
+        ndep_out[var_name] = (['time', 'ncells'], interpolated_data)
+        ndep_out[var_name].attrs.update(ndep_ds[var_name].attrs)
+        
+        # Add target grid coordinates
+        ndep_out['lon'] = (['ncells'], target_lon)
+        ndep_out['lon'].attrs = {'standard_name': 'longitude', 'long_name': 'longitude', 'units': 'degrees_east'}
+        ndep_out['lat'] = (['ncells'], target_lat)
+        ndep_out['lat'].attrs = {'standard_name': 'latitude', 'long_name': 'latitude', 'units': 'degrees_north'}
+        
+        # Copy global attributes
+        ndep_out.attrs.update(ndep_ds.attrs)
+        ndep_out.attrs['history'] = f"Interpolated from TL255 to target grid using nearest-neighbor; " + ndep_out.attrs.get('history', '')
+        
+        # Generate output filename with target grid name
+        out_fname = ndep_fname.replace('TL255', ifs_grid)
+        out_path = os.path.join(output_path_lpjg, out_fname)
+        
+        # Write output file
+        print(f"  Writing to {out_path}...")
+        ndep_out.to_netcdf(out_path)
+        print(f"  Saved {out_fname}")
+        
+        ndep_ds.close()
+        ndep_out.close()
+
+    # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
     # Use unified field interpolation approach for albedo fields
     albedo_file = f"{input_path_oifs}/bare_soil_albedos.grb"
     icmgg_init_file = f"{output_path_oifs}ICMGG{exp_name_oifs}INIT_{grid_name_oce}"
@@ -1373,29 +1468,29 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [95]
+    resolution_list = [319]
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'cubic-octahedral'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'ab45' #default for cubic-octahedral
+    exp_name_oifs = 'abns' #abns for TCO319, ab45 for TCO95
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
 
     # Name of ocean model grid. 
-    grid_name_oce = 'CORE2ice'
+    grid_name_oce = 'CORE3'
     cavity = True # Does this mesh have ice cavities?
     # set regular grid for intermediate interpolation. 
     # should be heigher than source grid res.
     interp_res = 'r3600x1801'
-    root_dir = '/home/a/a270186/software/ocp-tool/'
+    root_dir = '/work/ab0246/a270092/software/ocp-tool/'
     # Construct the relative path based on the script/notebook's location
     input_path_oce = root_dir+'input/fesom_mesh/'
-    fesom_grid_file_path = '/work/ab0995/a270186/model_inputs/fesom2/mesh/CORE2ice/mesh.nc'
-    force_overwrite_griddes = True
+    fesom_grid_file_path = '/work/ab0246/a270092/input/fesom2/CORE3/mesh.nc'
+    force_overwrite_griddes = False
     
     input_path_full_grid = root_dir+'input/gaussian_grids_full/'
     input_path_oifs = root_dir+'input/openifs_input_default/'

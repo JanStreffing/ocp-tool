@@ -1,9 +1,11 @@
+input/
 output/
 *~lock*
 *ICMGG*
 griddes.txt 
 *.pyc
-
+*log
+nohup.out
 
 # Python virtualenv
 .ocpt.
