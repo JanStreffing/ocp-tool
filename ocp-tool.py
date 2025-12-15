@@ -987,9 +987,77 @@ def write_oasis_files(res_num, output_path_oasis, grid_name_oce, input_path_lpjg
         write_netcdf3_file(co2_ds, out_path, fname)
         print(f"Saved {fname} to {out_path}")
 
-    # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
+    # Define target grid name for output files
     ifs_grid = f"TCO{res_num}" if truncation_type == "cubic-octahedral" else f"TL{res_num}"
     
+    # Interpolate nitrogen deposition files using the same KDTree idx
+    # These files are on TL255 grid (same as vegin) and have many timesteps
+    ndep_files = ['drynhx_TL255_hist_d1.nc', 'wetnhx_TL255_hist_d1.nc', 
+                  'drynoy_TL255_hist_d1.nc', 'wetnoy_TL255_hist_d1.nc']
+    
+    for ndep_fname in ndep_files:
+        ndep_input = os.path.join(input_path_lpjg, ndep_fname)
+        if not os.path.exists(ndep_input):
+            print(f"\nNitrogen deposition file {ndep_input} not found, skipping.")
+            continue
+        
+        print(f"\nInterpolating nitrogen deposition file {ndep_fname}...")
+        ndep_ds = xr.open_dataset(ndep_input)
+        
+        # Get the variable name (drynhx, wetnhx, drynoy, or wetnoy)
+        data_vars = [v for v in ndep_ds.data_vars if v not in ['time_bnds', 'lon_bnds', 'lat_bnds']]
+        if not data_vars:
+            print(f"  No data variables found in {ndep_fname}, skipping.")
+            ndep_ds.close()
+            continue
+        
+        var_name = data_vars[0]
+        print(f"  Interpolating variable: {var_name}")
+        
+        # Get source data - shape is (time, ncells)
+        src_data = ndep_ds[var_name].values
+        n_times = src_data.shape[0]
+        print(f"  Number of timesteps: {n_times}")
+        
+        # Apply nearest-neighbor interpolation using the same idx from vegin
+        # idx maps each target point to its nearest source point
+        interpolated_data = src_data[:, idx]  # (time, target_ncells)
+        
+        # Create output dataset
+        ndep_out = xr.Dataset()
+        
+        # Copy time coordinate
+        ndep_out['time'] = ndep_ds['time']
+        if 'time_bnds' in ndep_ds:
+            ndep_out['time_bnds'] = ndep_ds['time_bnds']
+        
+        # Add interpolated variable with target grid coordinates
+        ndep_out[var_name] = (['time', 'ncells'], interpolated_data)
+        ndep_out[var_name].attrs.update(ndep_ds[var_name].attrs)
+        
+        # Add target grid coordinates
+        ndep_out['lon'] = (['ncells'], target_lon)
+        ndep_out['lon'].attrs = {'standard_name': 'longitude', 'long_name': 'longitude', 'units': 'degrees_east'}
+        ndep_out['lat'] = (['ncells'], target_lat)
+        ndep_out['lat'].attrs = {'standard_name': 'latitude', 'long_name': 'latitude', 'units': 'degrees_north'}
+        
+        # Copy global attributes
+        ndep_out.attrs.update(ndep_ds.attrs)
+        ndep_out.attrs['history'] = f"Interpolated from TL255 to target grid using nearest-neighbor; " + ndep_out.attrs.get('history', '')
+        
+        # Generate output filename with target grid name
+        out_fname = ndep_fname.replace('TL255', ifs_grid)
+        out_path = os.path.join(output_path_lpjg, out_fname)
+        
+        # Write output file
+        print(f"  Writing to {out_path}...")
+        ndep_out.to_netcdf(out_path)
+        print(f"  Saved {out_fname}")
+        
+        ndep_ds.close()
+        ndep_out.close()
+
+    # Add bare soil albedo fields to the output ICMGG file if all parameters are provided
     # Use unified field interpolation approach for albedo fields
     albedo_file = f"{input_path_oifs}/bare_soil_albedos.grb"
     icmgg_init_file = f"{output_path_oifs}ICMGG{exp_name_oifs}INIT_{grid_name_oce}"
@@ -1400,14 +1468,14 @@ if __name__ == '__main__':
     
     # Truncation number of desired OpenIFS grid. Multiple possible.
     # Choose the ones you need [63, 95, 159, 255, 319, 399, 511, 799, 1279]
-    resolution_list = [95]
+    resolution_list = [319]
 
     # Choose type of trucation. linear or cubic-octahedral
     truncation_type = 'cubic-octahedral'
 
     # OpenIFS experiment name. This 4 digit code is part of the name of the
     # ICMGG????INIT file you got from EMCWF
-    exp_name_oifs = 'ab45' #default for cubic-octahedral
+    exp_name_oifs = 'abns' #abns for TCO319, ab45 for TCO95
     # I have not yet found a way to determine automatically the number of
     # fields in the ICMGG????INIT file. Set it correctly or stuff will break!
     num_fields = 81
