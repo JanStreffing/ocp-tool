@@ -19,7 +19,7 @@ nohup.out
 input/ocean_input_default/
 
 
+*.ipynb
 .ipynb_checkpoints/
-notebooks/.ipynb_checkpoints/
-ocp_tool/.ipynb_checkpoints/
 input/fesom_mesh/
+WORKLOG.md

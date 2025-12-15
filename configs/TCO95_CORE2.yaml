@@ -1,0 +1,50 @@
+# OCP-Tool Configuration
+# OpenIFS Coupling Preparation Tool
+
+# Atmosphere grid settings
+atmosphere:
+  resolution_list: [95]  # Options: 63, 95, 159, 255, 319, 399, 511, 799, 1279
+  truncation_type: "cubic-octahedral"  # Options: linear, cubic-octahedral
+  experiment_name: "ab45"  # 4-digit ECMWF experiment code (abns for TCO319, ab45 for TCO95)
+
+# Ocean grid settings
+ocean:
+  grid_name: "CORE2"  # Ocean model grid name
+  has_ice_cavities: false
+  mesh_file: "/work/ab0246/a270092/input/fesom2/CORE2/mesh.nc"
+  intermediate_resolution: "r360x181"  # Regular grid for intermediate interpolation
+  force_overwrite_griddes: false
+
+# Basin modifications for runoff
+runoff:
+  manual_basin_removal:
+    - "caspian-sea"
+    - "black-sea"
+
+# Paths (relative to root_dir or absolute)
+paths:
+  root_dir: "/work/ab0246/a270092/software/ocp-tool/"
+  
+  # Input directories
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+  
+  # Output directories (organized by oifsgrid_fesommesh)
+  output:
+    openifs_modified: "output/TCO95_CORE2/openifs_input_modified/"
+    runoff_modified: "output/TCO95_CORE2/runoff_map_modified/"
+    oasis: "output/TCO95_CORE2/oasis_mct3_input/"
+    lpj_guess: "output/TCO95_CORE2/lpj-guess/"
+    plots: "output/TCO95_CORE2/plots/"
+
+# Processing options
+options:
+  verbose: true
+  parallel_workers: 4  # Number of parallel workers for interpolation
+  use_dask: true  # Use dask for large array operations
