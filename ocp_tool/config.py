@@ -23,7 +23,6 @@ class OceanConfig:
     grid_name: str
     has_ice_cavities: bool
     mesh_file: Path
-    force_overwrite_griddes: bool
 
 
 @dataclass
@@ -157,7 +156,6 @@ def load_config(config_path: str | Path) -> OCPConfig:
             grid_name=raw['ocean']['grid_name'],
             has_ice_cavities=raw['ocean']['has_ice_cavities'],
             mesh_file=Path(raw['ocean']['mesh_file']),
-            force_overwrite_griddes=raw['ocean']['force_overwrite_griddes'],
         ),
         runoff=RunoffConfig(
             manual_basin_removal=raw['runoff']['manual_basin_removal'],

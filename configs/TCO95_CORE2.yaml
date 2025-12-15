@@ -12,7 +12,6 @@ ocean:
   grid_name: "CORE2"  # Ocean model grid name
   has_ice_cavities: false
   mesh_file: "/work/ab0246/a270092/input/fesom2/CORE2/mesh.nc"
-  force_overwrite_griddes: false
 
 # Basin modifications for runoff
 runoff:
