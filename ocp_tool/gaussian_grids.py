@@ -402,7 +402,7 @@ def read_fesom_grid_polygon(
             pf.write_mesh_to_netcdf(fesom_grid, ofile=str(mesh_file), overwrite=True, cavity=has_cavities)
             print(f" Created mesh.nc: {mesh_file}")
         except ImportError:
-            raise ImportError("pyfesom2 is required to generate mesh.nc from ASCII files. "
+            raise ImportError("pyfesom2 is required for mesh generation. "
                             "Install with: pip install git+https://github.com/FESOM/pyfesom2.git")
         except Exception as e:
             raise RuntimeError(f"Failed to generate mesh.nc via pyfesom2: {e}")

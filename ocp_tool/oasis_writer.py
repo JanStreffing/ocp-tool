@@ -96,8 +96,15 @@ def _write_single_oasis_file(
         lonname = f'{grids_name}.lon'
         latname = f'{grids_name}.lat'
         
-        nc.createDimension(xname, grid.center_lons.shape[1])
-        nc.createDimension(yname, 1)
+        # Only create dimensions if they don't exist
+        if xname not in nc.dimensions:
+            nc.createDimension(xname, grid.center_lons.shape[1])
+        if yname not in nc.dimensions:
+            nc.createDimension(yname, 1)
+        
+        # Skip if variables already exist (avoid duplicates)
+        if lonname in nc.variables:
+            continue
         
         id_lon = nc.createVariable(lonname, 'float64', (yname, xname))
         id_lat = nc.createVariable(latname, 'float64', (yname, xname))
@@ -111,7 +118,8 @@ def _write_single_oasis_file(
             crnname = f'crn_{grids_name}'
             cloname = f'{grids_name}.clo'
             claname = f'{grids_name}.cla'
-            nc.createDimension(crnname, 4)
+            if crnname not in nc.dimensions:
+                nc.createDimension(crnname, 4)
             id_clo = nc.createVariable(cloname, 'float64', (crnname, yname, xname))
             id_cla = nc.createVariable(claname, 'float64', (crnname, yname, xname))
         
