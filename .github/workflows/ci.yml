@@ -36,9 +36,9 @@ jobs:
       - name: Test import of ocp_tool modules
         run: |
           python -c "
-          from ocp_tool.config import load_config
-          from ocp_tool.gaussian_grids import generate_gaussian_grid
-          from ocp_tool.lsm import process_land_sea_mask
+          # Test modules that don't require conda-only packages (eccodes/gribapi)
+          from ocp_tool.config import load_config, OCPConfig
+          from ocp_tool.runoff import modify_runoff_map
           print('✓ Successfully imported ocp_tool modules')
           "
 
