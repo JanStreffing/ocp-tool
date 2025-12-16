@@ -53,17 +53,17 @@ jobs:
       - name: Run flake8
         run: |
           # Stop the build if there are Python syntax errors or undefined names
-          pixi run -e dev flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.git,__pycache__,build,dist
+          pixi run -e dev flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.git,__pycache__,build,dist,.pixi
           # Exit-zero treats all errors as warnings
-          pixi run -e dev flake8 . --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics --exclude=.git,__pycache__,build,dist
+          pixi run -e dev flake8 . --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics --exclude=.git,__pycache__,build,dist,.pixi
       
       - name: Check code formatting with black
         run: |
-          pixi run -e dev black --check --diff --exclude=.git . || echo "::warning::Code formatting issues found."
+          pixi run -e dev black --check --diff --exclude='(\.git|\.pixi)' . || echo "::warning::Code formatting issues found."
       
       - name: Check import sorting with isort
         run: |
-          pixi run -e dev isort --check-only --diff . || echo "::warning::Import sorting issues found."
+          pixi run -e dev isort --check-only --diff --skip .pixi . || echo "::warning::Import sorting issues found."
 
   documentation:
     name: Documentation Check
