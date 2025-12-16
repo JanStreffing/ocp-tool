@@ -53,7 +53,7 @@ def run_ocp_tool(config: OCPConfig) -> None:
         
         # Step 2: Read ocean grid (if not AMIP)
         if config.ocean.grid_name != 'AMIP':
-            print("\nStep 2: Reading FESOM ocean grid...")
+            print("\nStep 2: Reading FESOM ocean grid (polygon method)...")
             ocean_lsm = read_fesom_grid_polygon(config, grid, verbose=config.options.verbose)
         else:
             print("\nStep 2: Skipped reading FESOM mesh (AMIP mode)")

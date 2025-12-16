@@ -23,8 +23,6 @@ class OceanConfig:
     grid_name: str
     has_ice_cavities: bool
     mesh_file: Path
-    intermediate_resolution: str
-    force_overwrite_griddes: bool
 
 
 @dataclass
@@ -108,12 +106,18 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
     Returns:
         OCPConfig dataclass with all configuration
     """
-    config_path = Path(config_path)
+    config_path = Path(config_path).resolve()
     
     with open(config_path, 'r') as f:
         raw = yaml.safe_load(f)
     
-    root_dir = Path(raw['paths']['root_dir'])
+    # Auto-detect root_dir: use config file's parent's parent (configs/ -> root)
+    # or explicit path if provided
+    if 'root_dir' in raw.get('paths', {}) and raw['paths']['root_dir']:
+        root_dir = Path(raw['paths']['root_dir'])
+    else:
+        # Assume config is in <root>/configs/
+        root_dir = config_path.parent.parent
     
     # Determine reduced grid path based on truncation type
     truncation_type = raw['atmosphere']['truncation_type']
@@ -140,12 +144,20 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
         lpj_guess=resolve_path(raw['paths']['input']['lpj_guess']),
     )
     
+    # Auto-compute output directory name from atmosphere and ocean settings
+    # Format: TCO{resolution}_{ocean_grid} (e.g., TCO95_CORE2, TCO319_CORE3)
+    resolution = raw['atmosphere']['resolution_list'][0]  # Use first resolution
+    ocean_grid = raw['ocean']['grid_name']
+    trunc_prefix = "TCO" if truncation_type == "cubic-octahedral" else "TL"
+    output_subdir = f"{trunc_prefix}{resolution}_{ocean_grid}"
+    
+    output_base = root_dir / "output" / output_subdir
     output_paths = OutputPaths(
-        openifs_modified=resolve_path(raw['paths']['output']['openifs_modified']),
-        runoff_modified=resolve_path(raw['paths']['output']['runoff_modified']),
-        oasis=resolve_path(raw['paths']['output']['oasis']),
-        lpj_guess=resolve_path(raw['paths']['output']['lpj_guess']),
-        plots=resolve_path(raw['paths']['output']['plots']),
+        openifs_modified=output_base / "openifs_input_modified",
+        runoff_modified=output_base / "runoff_map_modified",
+        oasis=output_base / "oasis_mct3_input",
+        lpj_guess=output_base / "lpj-guess",
+        plots=output_base / "plots",
     )
     
     return OCPConfig(
@@ -158,8 +170,6 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             grid_name=raw['ocean']['grid_name'],
             has_ice_cavities=raw['ocean']['has_ice_cavities'],
             mesh_file=Path(raw['ocean']['mesh_file']),
-            intermediate_resolution=raw['ocean']['intermediate_resolution'],
-            force_overwrite_griddes=raw['ocean']['force_overwrite_griddes'],
         ),
         runoff=RunoffConfig(
             manual_basin_removal=raw['runoff']['manual_basin_removal'],

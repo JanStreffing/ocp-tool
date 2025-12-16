@@ -12,8 +12,6 @@ ocean:
   grid_name: "CORE2"  # Ocean model grid name
   has_ice_cavities: false
   mesh_file: "/work/ab0246/a270092/input/fesom2/CORE2/mesh.nc"
-  intermediate_resolution: "r360x181"  # Regular grid for intermediate interpolation
-  force_overwrite_griddes: false
 
 # Basin modifications for runoff
 runoff:
@@ -21,11 +19,9 @@ runoff:
     - "caspian-sea"
     - "black-sea"
 
-# Paths (relative to root_dir or absolute)
+# Paths (relative to auto-detected root_dir, or absolute)
+# Output dirs auto-computed as: output/{TCO|TL}{resolution}_{ocean_grid}/
 paths:
-  root_dir: "/work/ab0246/a270092/software/ocp-tool/"
-  
-  # Input directories
   input:
     fesom_mesh: "input/fesom_mesh/"
     gaussian_grids_full: "input/gaussian_grids_full/"
@@ -34,14 +30,6 @@ paths:
     openifs_default: "input/openifs_input_default/"
     runoff_default: "input/runoff_map_default/"
     lpj_guess: "input/lpj-guess/"
-  
-  # Output directories (organized by oifsgrid_fesommesh)
-  output:
-    openifs_modified: "output/TCO95_CORE2/openifs_input_modified/"
-    runoff_modified: "output/TCO95_CORE2/runoff_map_modified/"
-    oasis: "output/TCO95_CORE2/oasis_mct3_input/"
-    lpj_guess: "output/TCO95_CORE2/lpj-guess/"
-    plots: "output/TCO95_CORE2/plots/"
 
 # Processing options
 options:
