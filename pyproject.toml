@@ -1,0 +1,179 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocp-tool"
+description = "Tool to generate OASIS files for coupling OpenIFS, FESOM2, and NEMO"
+authors = [
+    {name = "Jan Streffing", email = "jan.streffing@awi.de"}
+]
+readme = "README.md"
+license = {file = "licence"}
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
+dependencies = [
+    "numpy",
+    "netcdf4",
+    "eccodes",
+    "matplotlib",
+    "pandas",
+    "pyyaml",
+    "tqdm",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/pgierz/ocp-tool"
+Repository = "https://github.com/pgierz/ocp-tool"
+Issues = "https://github.com/pgierz/ocp-tool/issues"
+
+[project.entry-points."scriptengine.tasks"]
+"ocpt.main" = "ocp_tool.scriptengine_task:OCPTool"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+]
+jupyter = [
+    "jupyterlab",
+    "notebook",
+    "ipykernel",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "nbsphinx",
+    "myst-parser",
+    "sphinx-autoapi",
+]
+
+[tool.setuptools]
+packages = ["ocp_tool"]
+
+[tool.setuptools.dynamic]
+version = {attr = "ocp_tool.__version__"}
+
+# Pixi configuration
+[tool.pixi.project]
+name = "ocp-tool"
+description = "Tool to generate OASIS files for coupling OpenIFS, FESOM2, and NEMO"
+authors = ["Jan Streffing <jan.streffing@awi.de>"]
+channels = ["conda-forge", "bioconda", "eumetsat"]
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
+
+[tool.pixi.dependencies]
+python = ">=3.8"
+numpy = "*"
+netcdf4 = "*"
+matplotlib = "*"
+basemap = "*"
+pandas = "*"
+pyyaml = "*"
+python-eccodes = "*"
+git = "*"
+pip = "*"
+tqdm = "*"
+snakemake-minimal = ">=7.0"
+
+[tool.pixi.pypi-dependencies]
+# Use modernized pyfesom2 branch with Python 3.11+ support
+pyfesom2 = { git = "https://github.com/FESOM/pyfesom2.git", branch = "modernize-packaging" }
+
+[tool.pixi.feature.jupyter.dependencies]
+jupyterlab = "*"
+notebook = "*"
+ipykernel = "*"
+
+[tool.pixi.feature.dev.dependencies]
+pytest = "*"
+pytest-cov = "*"
+black = "*"
+isort = "*"
+flake8 = "*"
+mypy = "*"
+
+[tool.pixi.feature.docs.dependencies]
+sphinx = "*"
+sphinx-rtd-theme = "*"
+nbsphinx = "*"
+myst-parser = "*"
+sphinx-autoapi = "*"
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+jupyter = { features = ["jupyter"], solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }
+docs = { features = ["docs"], solve-group = "default" }
+full = { features = ["jupyter", "dev", "docs"], solve-group = "default" }
+
+[tool.pixi.tasks]
+lint = "flake8 ocp_tool"
+format = "black ocp_tool"
+sort-imports = "isort ocp_tool"
+type-check = "mypy ocp_tool"
+test = "pytest"
+clean-format = { depends-on = ["format", "sort-imports"] }
+jupyter = "jupyter lab"
+notebook = "jupyter notebook"
+docs-build = "sphinx-build -W -b html docs/source docs/build/html"
+docs-clean = "rm -rf docs/build"
+docs-serve = "python -m http.server 8000 --directory docs/build/html"
+workflow-dry = { cmd = "snakemake --dry-run", cwd = "workflow" }
+workflow-lint = { cmd = "snakemake --lint", cwd = "workflow" }
+workflow-run = { cmd = "snakemake --cores 4 --use-conda", cwd = "workflow" }
+build = "python -m build"
+install-dev = "pip install -e ."
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["ocp_tool"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=ocp_tool",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]

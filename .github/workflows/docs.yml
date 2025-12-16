@@ -1,0 +1,308 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'docs/**'
+      - '**.md'
+      - '**.py' 
+      - 'workflow/**'
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - 'docs/**'
+      - '**.md'
+      - '**.py'
+      - 'workflow/**'
+  workflow_dispatch:
+
+jobs:
+  build-docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper versioning
+      
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          environments: docs
+      
+      - name: Generate API documentation
+        run: |
+          # Create docs directory structure if it doesn't exist
+          mkdir -p docs/{source,build}
+          
+          # Generate Sphinx configuration if it doesn't exist
+          if [ ! -f docs/source/conf.py ]; then
+            cat > docs/source/conf.py << 'EOF'
+          import os
+          import sys
+          sys.path.insert(0, os.path.abspath('../..'))
+          
+          project = 'OCP-tool'
+          copyright = '2024, OCP-tool developers'
+          author = 'OCP-tool developers'
+          
+          extensions = [
+              'sphinx.ext.autodoc',
+              'sphinx.ext.viewcode',
+              'sphinx.ext.napoleon',
+              'sphinx.ext.intersphinx',
+              'nbsphinx',
+              'myst_parser',
+          ]
+          
+          templates_path = ['_templates']
+          exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+          
+          html_theme = 'sphinx_rtd_theme'
+          html_static_path = ['_static']
+          
+          # Notebook execution settings
+          nbsphinx_execute = 'never'
+          nbsphinx_allow_errors = True
+          
+          # Intersphinx mapping
+          intersphinx_mapping = {
+              'python': ('https://docs.python.org/3/', None),
+              'numpy': ('https://numpy.org/doc/stable/', None),
+              'matplotlib': ('https://matplotlib.org/stable/', None),
+          }
+          
+          # MyST settings
+          myst_enable_extensions = [
+              "colon_fence",
+              "deflist", 
+              "html_image",
+              "linkify",
+              "replacements",
+              "smartquotes",
+              "tasklist",
+          ]
+          EOF
+          fi
+          
+          # Generate main index if it doesn't exist
+          if [ ! -f docs/source/index.rst ]; then
+            cat > docs/source/index.rst << 'EOF'
+          OCP-tool Documentation
+          ======================
+          
+          OpenIFS Coupling Preparation Tool for climate modeling.
+          
+          .. toctree::
+             :maxdepth: 2
+             :caption: Contents:
+          
+             installation
+             workflow
+             api
+             notebooks
+             examples
+          
+          Indices and tables
+          ==================
+          
+          * :ref:`genindex`
+          * :ref:`modindex`
+          * :ref:`search`
+          EOF
+          fi
+          
+          # Build API docs with autoapi  
+          pixi run -e docs sphinx-apidoc -f -o docs/source/api ocp_tool
+      
+      - name: Convert notebooks for documentation
+        run: |
+          mkdir -p docs/source/notebooks
+          
+          # Copy main notebook
+          if [ -f ocp_tool.ipynb ]; then
+            cp ocp_tool.ipynb docs/source/notebooks/
+          fi
+          
+          # Create notebook index
+          cat > docs/source/notebooks.rst << 'EOF'
+          Jupyter Notebooks
+          =================
+          
+          Example notebooks demonstrating OCP-tool usage.
+          
+          .. toctree::
+             :maxdepth: 2
+          
+             notebooks/ocp_tool
+          EOF
+      
+      - name: Create additional documentation pages
+        run: |
+          # Installation guide
+          cat > docs/source/installation.md << 'EOF'
+          # Installation
+          
+          ## Requirements
+          
+          - Python 3.8+
+          - Conda/Mamba package manager
+          - NetCDF libraries
+          - ECCODES for GRIB processing
+          
+          ## Quick Install
+          
+          ```bash
+          git clone https://github.com/pgierz/ocp-tool.git
+          cd ocp-tool
+          conda env create -f environment.yaml
+          conda activate ocp-tool
+          pip install -e .
+          ```
+          
+          ## Container Installation
+          
+          ### Docker
+          ```bash
+          docker pull ghcr.io/pgierz/ocp-tool:latest-production
+          ```
+          
+          ### Singularity
+          ```bash
+          singularity pull ocp-tool.sif oras://ghcr.io/pgierz/ocp-tool:latest-singularity
+          ```
+          EOF
+          
+          # Workflow documentation
+          cat > docs/source/workflow.md << 'EOF'
+          # Snakemake Workflow
+          
+          The OCP-tool provides a complete Snakemake workflow for automated processing.
+          
+          ## Configuration
+          
+          Edit `workflow/config/config.yaml`:
+          
+          ```yaml
+          res_num: 159
+          truncation_type: "linear"
+          exp_name_oifs: "abda"
+          grid_name_oce: "CORE2"
+          ```
+          
+          ## Execution
+          
+          ```bash
+          # Local execution
+          snakemake --cores 4 --use-conda
+          
+          # HPC cluster
+          snakemake --profile workflow/profiles/slurm
+          
+          # Container execution
+          docker run --rm -v $(pwd):/app/data ocp-tool:latest snakemake --cores 4
+          ```
+          
+          ## Workflow Rules
+          
+          - `prepare_gaussian_grids`: Process OpenIFS grid files
+          - `process_fesom_grid`: Handle ocean model grids  
+          - `modify_land_sea_mask`: Core LSM modification
+          - `generate_oasis_files`: Create OASIS3-MCT files
+          - `modify_runoff_maps`: Adjust runoff routing
+          - `generate_plots`: Create visualizations
+          EOF
+          
+          # Examples page
+          cat > docs/source/examples.md << 'EOF'
+          # Examples
+          
+          ## Basic Usage
+          
+          ```python
+          from ocp_tool import ocp_tool
+          
+          # Generate coordinate and area fields
+          center_lats, center_lons, crn_lats, crn_lons, gridcell_area, lons_list, NN = \
+              ocp_tool.generate_coord_area(
+                  res_num=159,
+                  input_path_reduced_grid="input/gaussian_grids_linear_reduced/",
+                  input_path_full_grid="input/gaussian_grids_full/",
+                  truncation_type="linear"
+              )
+          ```
+          
+          ## Workflow Examples
+          
+          See the `workflow/` directory for complete Snakemake workflow examples.
+          EOF
+      
+      - name: Build Sphinx documentation
+        run: |
+          pixi run docs-build
+      
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: docs/build/html/
+          retention-days: 30
+
+  deploy-docs:
+    name: Deploy Documentation
+    runs-on: ubuntu-latest
+    needs: build-docs
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation
+          path: ./docs
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+      
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs
+      
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  link-check:
+    name: Check Documentation Links
+    runs-on: ubuntu-latest
+    needs: build-docs
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation
+          path: ./docs
+      
+      - name: Check HTML links
+        uses: lycheeverse/lychee-action@v1
+        with:
+          args: --verbose --no-progress --exclude-all-private docs/**/*.html
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
