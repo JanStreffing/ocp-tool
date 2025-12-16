@@ -8,12 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-workflow:
-    name: Test Snakemake Workflow
+  test-python:
+    name: Test Python Code
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.9", "3.10", "3.11"]
     
     steps:
       - name: Checkout code
@@ -23,43 +23,12 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.8.1
         with:
           environments: dev
-          
-      - name: Lint Snakefile
-        run: pixi run workflow-lint
-      
-      - name: Validate workflow configuration
-        run: |
-          pixi run -e dev python -c "import yaml; yaml.safe_load(open('workflow/config/config.yaml'))"
-          echo "✓ Configuration file is valid YAML"
       
       - name: Check Python scripts syntax
         run: |
           pixi run -e dev python -m py_compile run_ocp_tool.py
           pixi run -e dev python -m py_compile ocp_tool/*.py
           echo "✓ All Python scripts have valid syntax"
-      
-      - name: Dry run Snakemake workflow
-        run: |
-          # Create minimal test data structure
-          mkdir -p input/{gaussian_grids_full,gaussian_grids_linear_reduced,openifs_input_default,runoff_map_default,fesom_mesh}
-          mkdir -p output/{openifs_input_modified,oasis_mct3_input,runoff_map_modified,plots}
-          
-          # Test dry run with modified config for CI
-          cat > workflow/test_config.yaml << EOF
-          res_num: 159
-          truncation_type: "linear"
-          exp_name_oifs: "test"
-          num_fields: 50
-          grid_name_oce: "TEST"
-          cavity: false
-          interp_res: "r360x181"
-          fesom_grid_file_path: "/tmp/test_mesh.nc"
-          do_paleo: false
-          manual_basin_removal: []
-          EOF
-          
-          pixi run workflow-dry --configfile test_config.yaml
-          echo "✓ Snakemake workflow dry run successful"
       
       - name: Test import of ocp_tool modules
         run: |

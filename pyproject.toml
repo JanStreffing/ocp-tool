@@ -71,7 +71,7 @@ packages = ["ocp_tool"]
 version = {attr = "ocp_tool.__version__"}
 
 # Pixi configuration
-[tool.pixi.project]
+[tool.pixi.workspace]
 name = "ocp-tool"
 description = "Tool to generate OASIS files for coupling OpenIFS, FESOM2, and NEMO"
 authors = ["Jan Streffing <jan.streffing@awi.de>"]
