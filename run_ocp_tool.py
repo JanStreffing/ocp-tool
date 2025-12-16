@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from ocp_tool.config import load_config, OCPConfig
-from ocp_tool.gaussian_grids import generate_gaussian_grid, read_fesom_grid
+from ocp_tool.gaussian_grids import generate_gaussian_grid, read_fesom_grid_polygon
 from ocp_tool.lsm import process_land_sea_mask, create_slt_output_for_lpjg
 from ocp_tool.oasis_writer import write_oasis_grid_files, interpolate_vegin_data
 from ocp_tool.runoff import modify_runoff_map, modify_runoff_lsm
@@ -54,7 +54,7 @@ def run_ocp_tool(config: OCPConfig) -> None:
         # Step 2: Read ocean grid (if not AMIP)
         if config.ocean.grid_name != 'AMIP':
             print("\nStep 2: Reading FESOM ocean grid...")
-            ocean_lsm = read_fesom_grid(config, verbose=config.options.verbose)
+            ocean_lsm = read_fesom_grid_polygon(config, grid, verbose=config.options.verbose)
         else:
             print("\nStep 2: Skipped reading FESOM mesh (AMIP mode)")
             ocean_lsm = []
