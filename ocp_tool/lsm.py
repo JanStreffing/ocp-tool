@@ -387,6 +387,15 @@ def create_slt_output_for_lpjg(
                 temp_grib_file.unlink()
             return False
         
+        # Rename variable from 'slt' to 'var43' (LPJ-GUESS expects var43)
+        cmd_rename = f"ncrename -v slt,var43 {slt_output_path}"
+        if config.options.verbose:
+            print(f"Running: {cmd_rename}")
+        
+        result = os.system(cmd_rename)
+        if result != 0:
+            print(f"Warning: ncrename failed, variable may still be named 'slt'")
+        
         # Cleanup
         if temp_grib_file.exists():
             temp_grib_file.unlink()

@@ -1,0 +1,30 @@
+# Speed test config: TCO319 + DART mesh
+
+atmosphere:
+  resolution_list: [319]
+  truncation_type: "cubic-octahedral"
+  experiment_name: "abns"
+
+ocean:
+  grid_name: "DART"
+  has_ice_cavities: false
+  mesh_file: "/work/ab0246/a270092/input/fesom2/DART/dart_griddes_nodes.nc"
+
+runoff:
+  manual_basin_removal:
+    - "caspian-sea"
+
+paths:
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+
+options:
+  verbose: false
+  parallel_workers: 4
+  use_dask: false
