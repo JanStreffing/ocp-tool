@@ -79,18 +79,17 @@ channels = ["conda-forge", "bioconda", "eumetsat"]
 platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
-python = ">=3.8"
+python = ">=3.9"
 numpy = "*"
+scipy = "*"
 netcdf4 = "*"
+xarray = "*"
 matplotlib = "*"
-basemap = "*"
+cartopy = "*"
 pandas = "*"
 pyyaml = "*"
 python-eccodes = "*"
-git = "*"
 pip = "*"
-tqdm = "*"
-snakemake-minimal = ">=7.0"
 
 [tool.pixi.pypi-dependencies]
 # Use modernized pyfesom2 branch with Python 3.11+ support
