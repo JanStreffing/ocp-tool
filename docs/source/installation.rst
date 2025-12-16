@@ -10,10 +10,22 @@ Requirements
 - CDO (Climate Data Operators)
 - NCO (NetCDF Operators)
 
-Quick Install
--------------
+Quick Install (Recommended)
+---------------------------
 
-Using conda/mamba::
+Clone from GitHub and install dependencies manually::
+
+    git clone https://github.com/JanStreffing/ocp-tool.git
+    cd ocp-tool
+
+Then install the required Python packages in your existing environment.
+This is the most common approach, especially on HPC systems where
+you may already have the dependencies available via modules.
+
+Using conda/mamba
+-----------------
+
+Create a dedicated environment with all dependencies::
 
     git clone https://github.com/JanStreffing/ocp-tool.git
     cd ocp-tool
@@ -21,7 +33,10 @@ Using conda/mamba::
     conda activate ocp-tool
     pip install -e .
 
-Using pixi::
+Using pixi
+----------
+
+Pixi handles all dependencies automatically::
 
     git clone https://github.com/JanStreffing/ocp-tool.git
     cd ocp-tool

@@ -5,7 +5,7 @@ Handles loading YAML config and provides typed configuration dataclasses.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 import yaml
 
 
@@ -98,7 +98,7 @@ class OCPConfig:
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIUA'
 
 
-def load_config(config_path: str | Path) -> OCPConfig:
+def load_config(config_path: Union[str, Path]) -> OCPConfig:
     """
     Load configuration from YAML file.
     
