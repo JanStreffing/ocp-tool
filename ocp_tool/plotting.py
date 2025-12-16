@@ -8,7 +8,8 @@ from typing import Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.basemap import Basemap
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 from .config import OCPConfig
 from .gaussian_grids import GaussianGrid
@@ -31,7 +32,7 @@ def plot_land_sea_mask(
         resolution: Truncation number
     """
     fig = plt.figure(figsize=(24, 14))
-    ax = fig.add_subplot(111)
+    ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
     
     # Extract wet and dry points
     lsm_atm = lsm_data.lsm_binary_atm
@@ -42,8 +43,11 @@ def plot_land_sea_mask(
     xpts_land = grid.center_lons[np.round(lsm_land[:, :]) < 1]
     ypts_land = grid.center_lats[np.round(lsm_land[:, :]) < 1]
     
-    ax.scatter(xpts_land, ypts_land, s=100/resolution, color='red', marker='.', label='New dry points')
-    ax.scatter(xpts_atm, ypts_atm, s=200/resolution, marker='.', label='Wet points')
+    ax.scatter(xpts_land, ypts_land, s=100/resolution, color='red', marker='.', 
+               label='New dry points', transform=ccrs.PlateCarree())
+    ax.scatter(xpts_atm, ypts_atm, s=200/resolution, marker='.', 
+               label='Wet points', transform=ccrs.PlateCarree())
+    ax.add_feature(cfeature.COASTLINE)
     ax.legend(loc="lower right")
     
     output_file = config.output_paths.plots / f'land_points_T{resolution}.png'
@@ -81,45 +85,35 @@ def plot_runoff_maps(
     
     cmap = plt.cm.flag
     
-    # Amazon region
-    m = Basemap(
-        llcrnrlon=-60., llcrnrlat=-10,
-        urcrnrlon=-30., urcrnrlat=20.,
-        resolution='l', area_thresh=1000., projection='cyl'
-    )
-    xi, yi = m(lon, lat)
-    
+    # Amazon region - arrival
     fig = plt.figure(figsize=(12, 8))
-    m.pcolor(xi, yi, arrival_cat, cmap=cmap)
-    m.drawcoastlines()
-    m.drawparallels(np.arange(-90., 120., 45.))
-    m.drawmeridians(np.arange(0., 360., 90.))
+    ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
+    ax.set_extent([-60, -30, -10, 20], crs=ccrs.PlateCarree())
+    ax.pcolormesh(lon, lat, arrival_cat, cmap=cmap, transform=ccrs.PlateCarree())
+    ax.add_feature(cfeature.COASTLINE)
+    ax.gridlines(draw_labels=True)
     output_file = config.output_paths.plots / 'runoff_amazon_arrival.png'
     fig.savefig(str(output_file), format='png')
     plt.close(fig)
     
     # Ob region - drainage
-    m = Basemap(
-        llcrnrlon=50., llcrnrlat=40,
-        urcrnrlon=110., urcrnrlat=80.,
-        resolution='l', area_thresh=1000., projection='cyl'
-    )
-    
     fig = plt.figure(figsize=(12, 8))
-    m.pcolor(xi, yi, drainage_cat, cmap=cmap)
-    m.drawcoastlines()
-    m.drawparallels(np.arange(-90., 120., 45.))
-    m.drawmeridians(np.arange(0., 360., 90.))
+    ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
+    ax.set_extent([50, 110, 40, 80], crs=ccrs.PlateCarree())
+    ax.pcolormesh(lon, lat, drainage_cat, cmap=cmap, transform=ccrs.PlateCarree())
+    ax.add_feature(cfeature.COASTLINE)
+    ax.gridlines(draw_labels=True)
     output_file = config.output_paths.plots / 'runoff_ob_drainage.png'
     fig.savefig(str(output_file), format='png')
     plt.close(fig)
     
     # Ob region - arrival
     fig = plt.figure(figsize=(12, 8))
-    m.pcolor(xi, yi, arrival_cat, cmap=cmap)
-    m.drawcoastlines()
-    m.drawparallels(np.arange(-90., 120., 45.))
-    m.drawmeridians(np.arange(0., 360., 90.))
+    ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
+    ax.set_extent([50, 110, 40, 80], crs=ccrs.PlateCarree())
+    ax.pcolormesh(lon, lat, arrival_cat, cmap=cmap, transform=ccrs.PlateCarree())
+    ax.add_feature(cfeature.COASTLINE)
+    ax.gridlines(draw_labels=True)
     output_file = config.output_paths.plots / 'runoff_ob_arrival.png'
     fig.savefig(str(output_file), format='png')
     plt.close(fig)

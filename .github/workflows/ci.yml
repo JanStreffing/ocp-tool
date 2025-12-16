@@ -30,8 +30,8 @@ jobs:
           python -m py_compile ocp_tool/*.py
           echo "✓ All Python scripts have valid syntax"
       
-      - name: Install package
-        run: pip install -e .
+      - name: Install dependencies
+        run: pip install numpy scipy xarray netCDF4 pyyaml
       
       - name: Test import of ocp_tool modules
         run: |

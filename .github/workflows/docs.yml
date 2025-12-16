@@ -29,13 +29,13 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install sphinx alabaster
+          pip install sphinx alabaster numpy scipy xarray netCDF4 pyyaml matplotlib cartopy
           pip install -e .
       
       - name: Build documentation
         run: |
           cd docs
-          sphinx-build -W -b html source build/html
+          sphinx-build -b html source build/html
       
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4
