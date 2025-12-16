@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  test-workflow:
+    name: Test Snakemake Workflow
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10"]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          environments: dev
+          
+      - name: Lint Snakefile
+        run: pixi run workflow-lint
+      
+      - name: Validate workflow configuration
+        run: |
+          pixi run -e dev python -c "import yaml; yaml.safe_load(open('workflow/config/config.yaml'))"
+          echo "✓ Configuration file is valid YAML"
+      
+      - name: Check Python scripts syntax
+        run: |
+          pixi run -e dev python -m py_compile run_ocp_tool.py
+          pixi run -e dev python -m py_compile ocp_tool/*.py
+          echo "✓ All Python scripts have valid syntax"
+      
+      - name: Dry run Snakemake workflow
+        run: |
+          # Create minimal test data structure
+          mkdir -p input/{gaussian_grids_full,gaussian_grids_linear_reduced,openifs_input_default,runoff_map_default,fesom_mesh}
+          mkdir -p output/{openifs_input_modified,oasis_mct3_input,runoff_map_modified,plots}
+          
+          # Test dry run with modified config for CI
+          cat > workflow/test_config.yaml << EOF
+          res_num: 159
+          truncation_type: "linear"
+          exp_name_oifs: "test"
+          num_fields: 50
+          grid_name_oce: "TEST"
+          cavity: false
+          interp_res: "r360x181"
+          fesom_grid_file_path: "/tmp/test_mesh.nc"
+          do_paleo: false
+          manual_basin_removal: []
+          EOF
+          
+          pixi run workflow-dry --configfile test_config.yaml
+          echo "✓ Snakemake workflow dry run successful"
+      
+      - name: Test import of ocp_tool modules
+        run: |
+          pixi run -e dev python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from ocp_tool.config import load_config
+          from ocp_tool.gaussian_grids import generate_gaussian_grid
+          from ocp_tool.lsm import process_land_sea_mask
+          print('✓ Successfully imported ocp_tool modules')
+          "
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          environments: dev
+      
+      - name: Run flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          pixi run -e dev flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.git,__pycache__,build,dist
+          # Exit-zero treats all errors as warnings
+          pixi run -e dev flake8 . --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics --exclude=.git,__pycache__,build,dist
+      
+      - name: Check code formatting with black
+        run: |
+          pixi run -e dev black --check --diff --exclude=.git . || echo "::warning::Code formatting issues found. Run 'pixi run format' to fix."
+      
+      - name: Check import sorting with isort
+        run: |
+          pixi run -e dev isort --check-only --diff . || echo "::warning::Import sorting issues found. Run 'pixi run sort-imports' to fix."
+
+  # Notebook tests removed - notebooks no longer in repo
+
+  documentation:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check README files
+        run: |
+          for readme in README.md workflow/README.md; do
+            if [ -f "$readme" ]; then
+              echo "✓ Found $readme"
+            else
+              echo "::error::Missing $readme"
+              exit 1
+            fi
+          done
+      
+      - name: Check for broken links in documentation
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          config-file: '.github/markdown-link-check-config.json'
+        continue-on-error: true
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy security scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
