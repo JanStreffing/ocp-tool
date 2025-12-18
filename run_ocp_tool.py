@@ -12,6 +12,7 @@ If no config file is specified, uses config.yaml in the current directory.
 
 import sys
 import time
+from os import makedirs
 from pathlib import Path
 
 from ocp_tool.config import load_config, OCPConfig
@@ -22,6 +23,7 @@ from ocp_tool.runoff import modify_runoff_map, modify_runoff_lsm
 from ocp_tool.plotting import plot_land_sea_mask, plot_runoff_maps
 from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
 from ocp_tool.field_interpolation import interpolate_2d_fields_to_icmgg
+from ocp_tool.create_outputdirs import create_outputdirs
 
 
 def run_ocp_tool(config: OCPConfig) -> None:
@@ -39,14 +41,19 @@ def run_ocp_tool(config: OCPConfig) -> None:
     print(f"  Ocean grid: {config.ocean.grid_name}")
     print(f"  Ice cavities: {config.ocean.has_ice_cavities}")
     print(f"  Experiment: {config.atmosphere.experiment_name}")
-    print()
+    
     
     # Process each resolution
     for resolution in config.atmosphere.resolution_list:
         print(f"\n{'='*60}")
         print(f" Processing resolution T{resolution}")
+        print(f" Output: ./output/TCO{resolution}_{config.ocean.grid_name}")
         print(f"{'='*60}\n")
         
+        # Step 0: Create Output directories
+        print("Step 0: Creating output directories...")
+        create_outputdirs(config, resolution)
+
         # Step 1: Generate Gaussian grid
         print("Step 1: Generating Gaussian grid coordinates...")
         grid = generate_gaussian_grid(config, resolution)

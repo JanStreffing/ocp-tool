@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  test-python:
+    name: Test Python Code
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+      
+      - name: Check Python scripts syntax
+        run: |
+          pixi run python -m py_compile run_ocp_tool.py
+          pixi run python -m py_compile ocp_tool/*.py
+          echo "✓ All Python scripts have valid syntax"
+      
+      - name: Test import of ocp_tool modules
+        run: |
+          pixi run python -c "
+          from ocp_tool.config import load_config, OCPConfig
+          from ocp_tool.gaussian_grids import generate_gaussian_grid
+          from ocp_tool.lsm import process_land_sea_mask
+          from ocp_tool.oasis_writer import write_oasis_grid_files
+          from ocp_tool.runoff import modify_runoff_map
+          from ocp_tool.plotting import plot_land_sea_mask
+          print('✓ Successfully imported all ocp_tool modules')
+          "
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          environments: dev
+      
+      - name: Run flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          pixi run -e dev flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.git,__pycache__,build,dist,.pixi
+          # Exit-zero treats all errors as warnings
+          pixi run -e dev flake8 . --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics --exclude=.git,__pycache__,build,dist,.pixi
+      
+      - name: Check code formatting with black
+        run: |
+          pixi run -e dev black --check --diff --exclude='(\.git|\.pixi)' . || echo "::warning::Code formatting issues found."
+      
+      - name: Check import sorting with isort
+        run: |
+          pixi run -e dev isort --check-only --diff --skip .pixi . || echo "::warning::Import sorting issues found."
+
+  documentation:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check README files
+        run: |
+          for readme in README.md workflow/README.md; do
+            if [ -f "$readme" ]; then
+              echo "✓ Found $readme"
+            else
+              echo "::error::Missing $readme"
+              exit 1
+            fi
+          done
+      
+      - name: Check for broken links in documentation
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          config-file: '.github/markdown-link-check-config.json'
+        continue-on-error: true
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy security scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+        continue-on-error: true

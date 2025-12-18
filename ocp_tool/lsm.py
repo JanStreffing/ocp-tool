@@ -157,6 +157,7 @@ def modify_lsm(
     
     if ocean_grid_name != 'AMIP':
         # Automatic lake removal based on ocean mask
+        # Polygon method: ocean_lsm = 1 means land, 0 means ocean
         n_points = len(gribfield_mod[slt_id])
         
         for i in range(n_points - 1):

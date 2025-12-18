@@ -361,6 +361,9 @@ def read_fesom_grid_polygon(
     falls inside the FESOM ocean mesh. It scales well for high-resolution grids
     as it doesn't require an intermediate regular grid.
     
+    If mesh_file doesn't exist or force_overwrite_griddes is True, attempts to
+    generate mesh.nc from FESOM ASCII files using pyfesom2.
+    
     Algorithm:
     1. Build ocean boundary from coastal edges + calving front edges
     2. Create convex hulls for small disconnected cavity components
@@ -385,6 +388,25 @@ def read_fesom_grid_polygon(
     mesh_file = config.ocean.mesh_file
     has_cavities = config.ocean.has_ice_cavities
     
+    # Generate mesh.nc from ASCII files if needed
+    if not mesh_file.exists() or config.ocean.force_overwrite_griddes:
+        try:
+            import pyfesom2 as pf
+            griddir = str(mesh_file.parent)
+            if mesh_file.exists():
+                print(f" mesh.nc exists but force_overwrite_griddes=True, regenerating via pyfesom2")
+            else:
+                print(f" mesh.nc not found, generating from ASCII files via pyfesom2")
+            print(f" Reading FESOM ASCII grid from: {griddir}")
+            fesom_grid = pf.read_fesom_ascii_grid(griddir=griddir, cavity=has_cavities)
+            pf.write_mesh_to_netcdf(fesom_grid, ofile=str(mesh_file), overwrite=True, cavity=has_cavities)
+            print(f" Created mesh.nc: {mesh_file}")
+        except ImportError:
+            raise ImportError("pyfesom2 is required for mesh generation. "
+                            "Install with: pip install git+https://github.com/FESOM/pyfesom2.git")
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate mesh.nc via pyfesom2: {e}")
+    
     print(f" Loading FESOM mesh: {mesh_file}")
     mesh = Dataset(str(mesh_file), 'r')
     lon = mesh.variables['lon'][:]
@@ -392,8 +414,9 @@ def read_fesom_grid_polygon(
     triag = mesh.variables['triag_nodes'][:] - 1  # Convert to 0-indexed
     
     if has_cavities and 'cav_nod_mask' in mesh.variables:
-        cav_mask = mesh.variables['cav_nod_mask'][:]
-        print(f" Cavity nodes: {int(np.sum(cav_mask == 1))}")
+        cav_mask = np.ma.filled(mesh.variables['cav_nod_mask'][:], 0)
+        n_cavity = int(np.sum(cav_mask == 1))
+        print(f" Cavity nodes: {n_cavity}")
     else:
         cav_mask = np.zeros(len(lon))
         print(" No cavity mask found or cavities disabled")
