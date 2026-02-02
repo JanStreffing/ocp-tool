@@ -342,11 +342,11 @@ def create_slt_output_for_lpjg(
     
     input_file = config.get_icmgg_output_file()
     
-    # Generate output filename
+    # Generate output filename with ocean grid name
     if config.atmosphere.truncation_type == 'cubic-octahedral':
-        slt_output_name = f'slt_TCO{resolution}.nc'
+        slt_output_name = f'slt_TCO{resolution}_{config.ocean.grid_name}.nc'
     elif config.atmosphere.truncation_type == 'linear':
-        slt_output_name = f'slt_TL{resolution}.nc'
+        slt_output_name = f'slt_TL{resolution}_{config.ocean.grid_name}.nc'
     else:
         raise ValueError(f"Unknown truncation type: {config.atmosphere.truncation_type}")
     

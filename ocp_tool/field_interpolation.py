@@ -112,6 +112,12 @@ def interpolate_co2_emissions(input_grib_file, icmgg_init_file, output_file, var
         # Second pass: read, interpolate and prepare each variable for writing
         interpolated_emissions = {}
         
+        # Parameter ID mapping for CO2 emissions
+        # Map input paramIds to desired output paramIds
+        param_id_mapping = {
+            228083: 210068,  # fco2nee -> co2nbf
+        }
+        
         with open(input_grib_file, 'rb') as f:
             while True:
                 gid = eccodes.codes_grib_new_from_file(f)
@@ -129,10 +135,14 @@ def interpolate_co2_emissions(input_grib_file, icmgg_init_file, output_file, var
                     # Create source points for interpolation
                     source_points = np.column_stack((lons, lats))
                     
+                    # Get the original paramId and apply mapping if necessary
+                    original_param_id = eccodes.codes_get(gid, 'paramId')
+                    mapped_param_id = param_id_mapping.get(original_param_id, original_param_id)
+                    
                     # Store the original GRIB message information for template
                     template_info = {
                         'short_name': short_name,
-                        'param_id': eccodes.codes_get(gid, 'paramId'),
+                        'param_id': mapped_param_id,
                         'level_type': eccodes.codes_get(gid, 'typeOfLevel'),
                         'level': eccodes.codes_get(gid, 'level'),
                         'grid_type': eccodes.codes_get(gid, 'gridType')
