@@ -22,7 +22,7 @@ class OceanConfig:
     """Ocean grid configuration."""
     grid_name: str
     has_ice_cavities: bool
-    mesh_file: Path
+    mesh_file: Optional[Path]
     intermediate_resolution: str = "r360x181"
     force_overwrite_griddes: bool = False
 
@@ -171,7 +171,7 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
         ocean=OceanConfig(
             grid_name=raw['ocean']['grid_name'],
             has_ice_cavities=raw['ocean']['has_ice_cavities'],
-            mesh_file=Path(raw['ocean']['mesh_file']),
+            mesh_file=Path(raw['ocean']['mesh_file']) if raw['ocean']['mesh_file'] is not None else None,
             intermediate_resolution=raw['ocean'].get('intermediate_resolution', 'r360x181'),
             force_overwrite_griddes=raw['ocean'].get('force_overwrite_griddes', False),
         ),
