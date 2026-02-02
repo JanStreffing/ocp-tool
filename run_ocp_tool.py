@@ -74,7 +74,7 @@ def run_ocp_tool(config: OCPConfig) -> None:
         print("\nStep 4: Writing OASIS grid/mask/area files...")
         write_oasis_grid_files(
             config, grid, lsm_data, resolution,
-            parallel=config.options.parallel_workers > 1
+            parallel=False  # Disabled: NetCDF4/HDF5 race conditions with parallel writes
         )
         
         # Step 5: Interpolate vegetation and CO2 data
@@ -117,13 +117,16 @@ def run_ocp_tool(config: OCPConfig) -> None:
             verbose=config.options.verbose
         )
         
-        # Step 10: Modify runoff maps
-        print("\nStep 10: Modifying runoff maps...")
-        lons, lats = modify_runoff_map(config, resolution)
-        
-        # Step 11: Modify runoff LSM
-        print("\nStep 11: Modifying runoff land-sea mask...")
-        modify_runoff_lsm(config, lons, lats)
+        # Step 10: Modify runoff maps (skip for AMIP - no ocean coupling)
+        if config.ocean.grid_name != 'AMIP':
+            print("\nStep 10: Modifying runoff maps...")
+            lons, lats = modify_runoff_map(config, resolution)
+            
+            # Step 11: Modify runoff LSM
+            print("\nStep 11: Modifying runoff land-sea mask...")
+            modify_runoff_lsm(config, lons, lats)
+        else:
+            print("\nStep 10-11: Skipped runoff processing (AMIP mode - no ocean coupling)")
         
         # Step 12: Create SLT output for LPJ-GUESS
         print("\nStep 12: Creating SLT output for LPJ-GUESS...")

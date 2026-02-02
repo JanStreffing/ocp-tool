@@ -69,8 +69,9 @@ def write_oasis_grid_files(
                 config, grid, lsm_data, resolution, nn, grid_names, file_type
             )
     
-    # Copy runoff files into OASIS files
-    _append_runoff_to_oasis_files(config, file_types)
+    # Copy runoff files into OASIS files (skip for AMIP mode - no ocean coupling)
+    if config.ocean.grid_name != 'AMIP':
+        _append_runoff_to_oasis_files(config, file_types)
 
 
 def _write_single_oasis_file(

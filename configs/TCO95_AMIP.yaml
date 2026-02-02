@@ -1,0 +1,37 @@
+# OCP-Tool Configuration
+# OpenIFS Coupling Preparation Tool
+# Configuration: TCO95 + AMIP (atmosphere-only, no ocean coupling)
+
+# Atmosphere grid settings
+atmosphere:
+  resolution_list: [95]  # TCO95
+  truncation_type: "cubic-octahedral"
+  experiment_name: "ab45"  # IMPORTANT: abns for TCO319, ab45 for TCO95
+
+# Ocean grid settings
+ocean:
+  grid_name: "AMIP"
+  has_ice_cavities: false  # AMIP has no ocean
+  mesh_file: null
+
+# Basin modifications for runoff
+runoff:
+  manual_basin_removal: []
+
+# Paths (relative to auto-detected root_dir, or absolute)
+# Output dirs auto-computed as: output/{TCO|TL}{resolution}_{ocean_grid}/
+paths:
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+
+# Processing options
+options:
+  verbose: true
+  parallel_workers: 4
+  use_dask: true
