@@ -29,7 +29,7 @@ dependencies = [
     "eccodes",
     "matplotlib",
     "pandas",
-    "pyfesom2>=0.4.1",
+    "pyfesom2 @ git+https://github.com/FESOM/pyfesom2.git@feature/ascii-to-netcdf-performance-optimization",
     "pyyaml",
     "shapely",
     "tqdm",
