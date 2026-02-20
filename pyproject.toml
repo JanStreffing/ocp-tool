@@ -29,7 +29,9 @@ dependencies = [
     "eccodes",
     "matplotlib",
     "pandas",
+    "pyfesom2 @ git+https://github.com/FESOM/pyfesom2.git@feature/ascii-to-netcdf-performance-optimization",
     "pyyaml",
+    "shapely",
     "tqdm",
 ]
 dynamic = ["version"]
