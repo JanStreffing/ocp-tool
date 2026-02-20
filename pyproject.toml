@@ -29,7 +29,9 @@ dependencies = [
     "eccodes",
     "matplotlib",
     "pandas",
+    "pyfesom2>=0.4.1",
     "pyyaml",
+    "shapely",
     "tqdm",
 ]
 dynamic = ["version"]
