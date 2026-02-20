@@ -72,6 +72,9 @@ def write_oasis_grid_files(
     # Copy runoff files into OASIS files (skip for AMIP mode - no ocean coupling)
     if config.ocean.grid_name != 'AMIP':
         _append_runoff_to_oasis_files(config, file_types)
+    else:
+        # Add AMIP forcing-reader grid for SST/SIC forcing
+        _append_amip_grid_to_oasis_files(config, file_types)
 
 
 def _write_single_oasis_file(
@@ -203,6 +206,127 @@ def _append_runoff_to_oasis_files(config: OCPConfig, file_types: list) -> None:
         nc.close()
         
         print(f"\n {'='*50} \n")
+
+
+def _append_amip_grid_to_oasis_files(config: OCPConfig, file_types: list) -> None:
+    """Append AMIP forcing-reader grid (360x180 regular) to OASIS files for SST/SIC forcing."""
+    print(' Adding AMIP forcing-reader grid (360x180) to OASIS files')
+    
+    # Create regular lat-lon grid: 180 lats x 360 lons
+    nlats = 180
+    nlons = 360
+    
+    # Cell centers: lon = 0.5 to 359.5, lat = -89.5 to 89.5
+    lons_1d = np.arange(0.5, 360.0, 1.0)  # 0.5, 1.5, 2.5, ..., 359.5
+    lats_1d = np.arange(-89.5, 90.0, 1.0)  # -89.5, -88.5, ..., 89.5
+    lons, lats = np.meshgrid(lons_1d, lats_1d)
+    
+    # Cell corners (4 corners per cell)
+    lons_corners = np.arange(0.0, 360.0, 1.0)  # 0, 1, 2, ..., 359
+    lats_corners = np.arange(-90.0, 91.0, 1.0)  # -90, -89, ..., 90
+    
+    # Build corner arrays: shape (nlats, nlons, 4)
+    corners_lon = np.zeros((nlats, nlons, 4))
+    corners_lat = np.zeros((nlats, nlons, 4))
+    
+    for i in range(nlats):
+        for j in range(nlons):
+            # Corners in counter-clockwise order
+            # Use 360° for the right edge of the last cell, not 0°
+            lon_right = lons_corners[j+1] if j < nlons-1 else 360.0
+            corners_lon[i, j, 0] = lons_corners[j]       # bottom-left
+            corners_lon[i, j, 1] = lon_right             # bottom-right
+            corners_lon[i, j, 2] = lon_right             # top-right
+            corners_lon[i, j, 3] = lons_corners[j]       # top-left
+            
+            corners_lat[i, j, 0] = lats_corners[i]       # bottom-left
+            corners_lat[i, j, 1] = lats_corners[i]       # bottom-right
+            corners_lat[i, j, 2] = lats_corners[i+1]     # top-right
+            corners_lat[i, j, 3] = lats_corners[i+1]     # top-left
+    
+    # Calculate cell areas (in m^2)
+    earth_radius = 6371000.0  # meters
+    cell_area = np.zeros((nlats, nlons))
+    for i in range(nlats):
+        lat_min = lats_corners[i] * np.pi / 180.0
+        lat_max = lats_corners[i+1] * np.pi / 180.0
+        dlon_rad = 1.0 * np.pi / 180.0
+        # Area = R^2 * dlon * (sin(lat_max) - sin(lat_min))
+        cell_area[i, :] = earth_radius**2 * dlon_rad * (np.sin(lat_max) - np.sin(lat_min))
+    
+    # Write to each file type
+    for file_type in file_types:
+        oasis_file = config.output_paths.oasis / f'{file_type}.nc'
+        nc = Dataset(str(oasis_file), 'a')
+        
+        grid_name = 'AMIP'
+        xname = f'x_{grid_name}'
+        yname = f'y_{grid_name}'
+        
+        # Create dimensions
+        if xname not in nc.dimensions:
+            nc.createDimension(xname, nlons)
+        if yname not in nc.dimensions:
+            nc.createDimension(yname, nlats)
+        
+        if file_type == 'grids':
+            # Write lon/lat centers
+            lonname = f'{grid_name}.lon'
+            latname = f'{grid_name}.lat'
+            
+            if lonname not in nc.variables:
+                var_lon = nc.createVariable(lonname, 'float64', (yname, xname))
+                var_lon.units = 'degrees_east'
+                var_lon.standard_name = 'Longitude'
+                var_lon[:] = lons
+            
+            if latname not in nc.variables:
+                var_lat = nc.createVariable(latname, 'float64', (yname, xname))
+                var_lat.units = 'degrees_north'
+                var_lat.standard_name = 'Latitude'
+                var_lat[:] = lats
+            
+            # Write corners
+            crnname = f'crn_{grid_name}'
+            cloname = f'{grid_name}.clo'
+            claname = f'{grid_name}.cla'
+            
+            if crnname not in nc.dimensions:
+                nc.createDimension(crnname, 4)
+            
+            if cloname not in nc.variables:
+                var_clo = nc.createVariable(cloname, 'float64', (crnname, yname, xname))
+                var_clo.units = 'degrees_east'
+                var_clo.standard_name = 'Longitude corners'
+                var_clo[:] = np.transpose(corners_lon, (2, 0, 1))  # (nlats, nlons, 4) -> (4, nlats, nlons)
+            
+            if claname not in nc.variables:
+                var_cla = nc.createVariable(claname, 'float64', (crnname, yname, xname))
+                var_cla.units = 'degrees_north'
+                var_cla.standard_name = 'Latitude corners'
+                var_cla[:] = np.transpose(corners_lat, (2, 0, 1))  # (nlats, nlons, 4) -> (4, nlats, nlons)
+        
+        elif file_type == 'areas':
+            areaname = f'{grid_name}.srf'
+            if areaname not in nc.variables:
+                var_area = nc.createVariable(areaname, 'float64', (yname, xname))
+                var_area.units = 'm2'
+                var_area.standard_name = 'Grid cell area'
+                var_area[:] = cell_area
+        
+        elif file_type == 'masks':
+            maskname = f'{grid_name}.msk'
+            if maskname not in nc.variables:
+                var_mask = nc.createVariable(maskname, 'int32', (yname, xname))
+                var_mask.units = '1'
+                var_mask.standard_name = 'Grid mask (0=land, 1=ocean)'
+                # All land (0) for AMIP forcing reader
+                var_mask[:] = np.zeros((nlats, nlons), dtype=np.int32)
+        
+        nc.close()
+    
+    print(' AMIP forcing-reader grid added successfully')
+    print(f"\n {'='*50} \n")
 
 
 def interpolate_vegin_data(
