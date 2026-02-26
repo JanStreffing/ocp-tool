@@ -5,7 +5,7 @@ Handles loading YAML config and provides typed configuration dataclasses.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 import yaml
 
 
@@ -55,6 +55,38 @@ class OutputPaths:
 
 
 @dataclass
+class PaleoConfig:
+    """Paleo reconstruction configuration."""
+    enabled: bool
+    experiment_id: str  # e.g. "EP", "LP" — used in filenames
+    reconstruction_dir: Path  # directory containing reconstruction NetCDF files
+    modern_reference_dir: Path  # directory containing modern reference files
+    icmsh_input_file: Path  # path to ICMSHaackINIT_CORE2 (spectral topo)
+    calnoro_binary: Optional[Path]  # path to compiled calnoro binary
+    # Reconstruction file names (relative to reconstruction_dir)
+    ice_mask_file: str = "{exp_id}_icemask_v1.0.nc"
+    topography_file: str = "{exp_id}_topo_v1.0.nc"
+    lsm_file: str = "{exp_id}_LSM_v1.0.nc"
+    lake_file: str = "{exp_id}_lake_v1.0.nc"
+    soil_file: str = "{exp_id}_soil_v1.0.nc"
+    biome_file: str = "{exp_id}_mbiome_v1.0.nc"
+    # Modern reference file names (relative to modern_reference_dir)
+    modern_topo_file: str = "Modern_std_topo_v1.0.nc"
+    modern_lake_file: str = "Modern_std_soil_lake_v1.0.nc"
+
+    def get_reconstruction_file(self, file_attr: str) -> Path:
+        """Get full path to a reconstruction file, substituting experiment_id."""
+        template = getattr(self, file_attr)
+        filename = template.format(exp_id=self.experiment_id)
+        return self.reconstruction_dir / filename
+
+    def get_modern_file(self, file_attr: str) -> Path:
+        """Get full path to a modern reference file."""
+        filename = getattr(self, file_attr)
+        return self.modern_reference_dir / filename
+
+
+@dataclass
 class ProcessingOptions:
     """Processing options."""
     verbose: bool
@@ -72,6 +104,7 @@ class OCPConfig:
     output_paths: OutputPaths
     options: ProcessingOptions
     root_dir: Path
+    paleo: Optional[PaleoConfig] = None
     
     @property
     def co2_grib_file(self) -> Path:
@@ -96,6 +129,17 @@ class OCPConfig:
     def get_icmgg_iniua_file(self) -> Path:
         """Get path to output ICMGG INIUA file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIUA'
+    
+    def get_icmsh_input_file(self) -> Path:
+        """Get path to input ICMSH file (spectral topography)."""
+        if self.paleo and self.paleo.icmsh_input_file:
+            return self.paleo.icmsh_input_file
+        return self.input_paths.openifs_default / f'ICMSH{self.atmosphere.experiment_name}INIT'
+    
+    def get_icmsh_output_file(self) -> Path:
+        """Get path to output ICMSH file."""
+        suffix = f'_{self.paleo.experiment_id}' if self.paleo else f'_{self.ocean.grid_name}'
+        return self.output_paths.openifs_modified / f'ICMSH{self.atmosphere.experiment_name}INIT{suffix}'
 
 
 def load_config(config_path: Union[str, Path]) -> OCPConfig:
@@ -186,6 +230,30 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             use_dask=raw['options']['use_dask'],
         ),
         root_dir=root_dir,
+        paleo=_load_paleo_config(raw, resolve_path) if 'paleo' in raw else None,
+    )
+
+
+def _load_paleo_config(raw: dict, resolve_path) -> Optional[PaleoConfig]:
+    """Parse paleo section from raw YAML config."""
+    paleo_raw = raw.get('paleo', {})
+    if not paleo_raw.get('enabled', False):
+        return None
+    return PaleoConfig(
+        enabled=True,
+        experiment_id=paleo_raw['experiment_id'],
+        reconstruction_dir=resolve_path(paleo_raw['reconstruction_dir']),
+        modern_reference_dir=resolve_path(paleo_raw['modern_reference_dir']),
+        icmsh_input_file=resolve_path(paleo_raw['icmsh_input_file']),
+        calnoro_binary=resolve_path(paleo_raw['calnoro_binary']) if paleo_raw.get('calnoro_binary') else None,
+        ice_mask_file=paleo_raw.get('ice_mask_file', '{exp_id}_icemask_v1.0.nc'),
+        topography_file=paleo_raw.get('topography_file', '{exp_id}_topo_v1.0.nc'),
+        lsm_file=paleo_raw.get('lsm_file', '{exp_id}_LSM_v1.0.nc'),
+        lake_file=paleo_raw.get('lake_file', '{exp_id}_lake_v1.0.nc'),
+        soil_file=paleo_raw.get('soil_file', '{exp_id}_soil_v1.0.nc'),
+        biome_file=paleo_raw.get('biome_file', '{exp_id}_mbiome_v1.0.nc'),
+        modern_topo_file=paleo_raw.get('modern_topo_file', 'Modern_std_topo_v1.0.nc'),
+        modern_lake_file=paleo_raw.get('modern_lake_file', 'Modern_std_soil_lake_v1.0.nc'),
     )
 
 

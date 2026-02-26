@@ -1,0 +1,65 @@
+# OCP-Tool Configuration — Paleo Example (Early Pliocene)
+# OpenIFS Coupling Preparation Tool with paleo reconstruction modifications
+
+# Atmosphere grid settings
+atmosphere:
+  resolution_list: [95]
+  truncation_type: "cubic-octahedral"
+  experiment_name: "aack"  # 4-digit ECMWF experiment code
+
+# Ocean grid settings
+ocean:
+  grid_name: "CORE2"
+  has_ice_cavities: false
+  mesh_file: "/work/ab0246/a270092/input/fesom2/CORE2/mesh.nc"
+
+# Basin modifications for runoff
+runoff:
+  manual_basin_removal:
+    - "caspian-sea"
+    - "black-sea"
+
+# Paths (relative to auto-detected root_dir, or absolute)
+paths:
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+
+# Paleo reconstruction settings
+paleo:
+  enabled: true
+  experiment_id: "EP"  # Used in filenames: EP_icemask_v1.0.nc, etc.
+
+  # Directory containing paleo reconstruction NetCDF files
+  reconstruction_dir: "/work/ab0246/a270179/runtime/input/pliomip3/EP/"
+
+  # Directory containing modern reference files
+  modern_reference_dir: "/work/ab0246/a270179/runtime/input/pliomip3/EP/"
+
+  # Path to the ICMSH spectral topography reference file
+  icmsh_input_file: "/work/ab0246/a270179/runtime/input/pliomip3/EP/ICMSHaackINIT_CORE2_new3"
+
+  # Path to compiled calnoro binary (set to null to skip SSO computation)
+  calnoro_binary: null  # e.g. "/path/to/calnoro/a.out"
+
+  # Reconstruction file name templates ({exp_id} is replaced by experiment_id)
+  # These are the defaults — override only if your files differ:
+  # ice_mask_file: "{exp_id}_icemask_v1.0.nc"
+  # topography_file: "{exp_id}_topo_v1.0.nc"
+  # lsm_file: "{exp_id}_LSM_v1.0.nc"
+  # lake_file: "{exp_id}_lake_v1.0.nc"
+  # soil_file: "{exp_id}_soil_v1.0.nc"
+  # biome_file: "{exp_id}_mbiome_v1.0.nc"
+  # modern_topo_file: "Modern_std_topo_v1.0.nc"
+  # modern_lake_file: "Modern_std_soil_lake_v1.0.nc"
+
+# Processing options
+options:
+  verbose: true
+  parallel_workers: 4
+  use_dask: true
