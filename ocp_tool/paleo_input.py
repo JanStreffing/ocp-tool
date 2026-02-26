@@ -268,10 +268,7 @@ def _replace_grib_fields(
     output_file : destination GRIB
     replacements : dict mapping paramId → new values array
     """
-    from shutil import copy2
-    copy2(input_file, output_file)
-
-    # Read all messages, replace matched ones, write back
+    # Read all messages into memory first
     messages = []
     with open(input_file, 'rb') as f:
         while True:
