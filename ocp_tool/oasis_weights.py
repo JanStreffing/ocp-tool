@@ -302,6 +302,7 @@ def generate_weights(
     method: str = "existing",
     threads: int = 8,
     launcher: Optional[List[str]] = None,
+    worker_python: Optional[str] = None,
     oasis_build_path: Optional[str] = None,
 ):
     """Generate rmp_*.nc weight files in ``oasis_dir``.
@@ -344,7 +345,11 @@ def generate_weights(
         else:
             launcher = ["mpirun", "-n", str(nlinks)]
 
-    cmd = launcher + [sys.executable, "-m", "ocp_tool.oasis_weights", str(oasis_dir)]
+    # The srun worker only needs pyoasis + (OpenMPI) mpi4py + netCDF4 -- it reads
+    # grids from files, no pyfesom2 -- so it may run a different interpreter than
+    # this driver (which needs pyfesom2 to regenerate the feom grid).
+    py = worker_python or sys.executable
+    cmd = launcher + [py, "-m", "ocp_tool.oasis_weights", str(oasis_dir)]
     print(f"[oasis_weights] launching: {' '.join(cmd)}")
     subprocess.run(cmd, check=True, cwd=oasis_dir, env=env)
 
@@ -364,9 +369,14 @@ def regenerate_for_mesh(
     method: str = "existing",
     atm_grid: str = "A096",
     threads: int = 8,
+    worker_python: Optional[str] = None,
     oasis_build_path: Optional[str] = None,
 ):
     """Rebuild the OASIS grid files + feom remap weights for a new FESOM mesh.
+
+    The driver (this call) needs pyfesom2 to write the feom grid; the srun
+    weight-gen worker needs (OpenMPI) mpi4py + pyoasis. If those live in
+    different interpreters, pass ``worker_python`` for the latter.
 
     Steps:
       1. copy grids.nc/masks.nc/areas.nc from ``template_oasis_dir`` (which holds
@@ -395,7 +405,7 @@ def regenerate_for_mesh(
 
     return generate_weights(
         out_dir, atm_grid=atm_grid, method=method, threads=threads,
-        oasis_build_path=oasis_build_path,
+        worker_python=worker_python, oasis_build_path=oasis_build_path,
     )
 
 
