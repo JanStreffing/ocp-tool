@@ -194,6 +194,22 @@ def _strip_feom_corners(grids_path, prefix: str = "feom"):
     os.replace(tmp, grids_path)
 
 
+def _set_feom_mask_active(masks_path, prefix: str = "feom"):
+    """Force the feom OASIS mask to 'all active' (0).
+
+    pyfesom2.write_fesom_oasis_files writes <prefix>.msk = 1 for every node, but
+    OASIS uses 1 = *masked* (excluded). That leaves the feom grid with zero active
+    points, which aborts OASIS when feom is a remap *source* (m_GlobalSegMap:
+    non-positive ngseg). FESOM mesh nodes are all ocean, so the correct OASIS mask
+    is 0 everywhere (as in the original feom grid).
+    """
+    masks_path = Path(masks_path)
+    with Dataset(masks_path, "a") as nc:
+        v = f"{prefix}.msk"
+        if v in nc.variables:
+            nc.variables[v][:] = 0
+
+
 def _read_var(path: Path, name: str):
     if not path.exists():
         return None
@@ -467,6 +483,10 @@ def regenerate_for_mesh(
     mesh = pf.load_mesh(str(Path(mesh_path)))
     pf.write_fesom_oasis_files(mesh=mesh, output_dir=str(out_dir),
                                prefix="feom", overwrite=True)
+
+    # pyfesom2 writes feom.msk = 1 (which OASIS reads as fully masked); make the
+    # ocean nodes active so feom can be used as a remap source.
+    _set_feom_mask_active(out_dir / "masks.nc", prefix="feom")
 
     # Centre-based maps must not see feom corners (OASIS reads them from
     # grids.nc and aborts when they describe an unstructured *source* grid).
