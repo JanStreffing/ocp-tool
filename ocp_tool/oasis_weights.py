@@ -183,7 +183,7 @@ class OasisFileGrid:
     conservative remapping (e.g. feom written with corners by pyfesom2).
     """
 
-    def __init__(self, name: str, oasis_dir):
+    def __init__(self, name: str, oasis_dir, with_corners: bool = True):
         self.name = name
         d = Path(oasis_dir)
         lon = _read_var(d / "grids.nc", f"{name}.lon")
@@ -196,8 +196,12 @@ class OasisFileGrid:
         self.shape = self.center_longitudes.shape  # (nx, ny)
         self.size = int(self.center_longitudes.size)
 
-        clo = _read_var(d / "grids.nc", f"{name}.clo")
-        cla = _read_var(d / "grids.nc", f"{name}.cla")
+        # Corners are only needed for conservative (CONSERV) remapping. The
+        # centre-based maps (GAUSWGT/BICUBIC/DISTWGT) ignore them, and passing
+        # the FESOM dual-cell corners as a *source* grid trips OASIS/SCRIP, so
+        # they are only read when explicitly requested.
+        clo = _read_var(d / "grids.nc", f"{name}.clo") if with_corners else None
+        cla = _read_var(d / "grids.nc", f"{name}.cla") if with_corners else None
         if clo is not None and cla is not None:
             # (crn, y, x) -> (x, y, crn)
             self.corner_longitudes = np.ascontiguousarray(np.transpose(clo, (2, 1, 0)), dtype="float64")
@@ -294,13 +298,14 @@ def run_worker(run_dir):
 
     os.chdir(run_dir)
 
+    use_corners = os.environ.get("OCP_USE_CORNERS", "1") != "0"
     if rank < len(links):
         lk = links[rank]
         comp = pyoasis.Component(f"ocpw{rank:02d}")
         # Read original geometry (done by all coupled ranks) before any grid
         # write truncates grids.nc; barrier guarantees the ordering.
-        src = OasisFileGrid(lk.source, run_dir)
-        tgt = OasisFileGrid(lk.target, run_dir)
+        src = OasisFileGrid(lk.source, run_dir, with_corners=use_corners)
+        tgt = OasisFileGrid(lk.target, run_dir, with_corners=use_corners)
         comm.Barrier()
         src_part = src.write_pyoasis(pyoasis)
         tgt_part = tgt.write_pyoasis(pyoasis)
@@ -324,6 +329,7 @@ def generate_weights(
     atm_grid: str = "A096",
     method: str = "existing",
     threads: int = 8,
+    use_corners: Optional[bool] = None,
     launcher: Optional[List[str]] = None,
     worker_python: Optional[str] = None,
     oasis_build_path: Optional[str] = None,
@@ -360,6 +366,13 @@ def generate_weights(
     threads = max(1, int(threads))
     env["OASIS_OMP_NUM_THREADS"] = str(threads)
     env["OMP_NUM_THREADS"] = str(threads)
+
+    # Corners are only used by conservative remapping; default to using them
+    # only when a CONSERV link is present (passing FESOM corners as a source
+    # grid breaks the centre-based GAUSWGT/BICUBIC maps).
+    if use_corners is None:
+        use_corners = any(lk.map_name == "CONSERV" for lk in links)
+    env["OCP_USE_CORNERS"] = "1" if use_corners else "0"
 
     if launcher is None:
         if subprocess.call(["bash", "-lc", "command -v srun >/dev/null 2>&1"]) == 0:
