@@ -422,24 +422,43 @@ def generate_weights(
     # this driver (which needs pyfesom2 to regenerate the feom grid).
     py = worker_python or sys.executable
 
-    def _run_one(run_dir, run_link):
-        write_namcouple(run_dir, [run_link])
-        (run_dir / "links.json").write_text(json.dumps([run_link.as_dict()]))
-        if launcher is not None:
-            lp = launcher
-        elif subprocess.call(["bash", "-lc", "command -v srun >/dev/null 2>&1"]) == 0:
-            lp = ["srun", "-n", "1", f"--cpus-per-task={threads}", "--cpu-bind=cores"]
-        else:
-            lp = ["mpirun", "-n", "1"]
-        cmd = lp + [py, "-m", "ocp_tool.oasis_weights", str(run_dir)]
-        print(f"[oasis_weights] {run_link.source}->{run_link.target} ({run_link.map_name}): {' '.join(cmd)}")
-        subprocess.run(cmd, check=True, cwd=run_dir, env=env)
+    have_srun = subprocess.call(["bash", "-lc", "command -v srun >/dev/null 2>&1"]) == 0
 
-    # One OASIS run per link, each in its own directory. Running all links as
-    # separate single-rank components in one job makes them write the shared
-    # grids.nc / rmp_*.nc concurrently and corrupt them (observed: one link's
-    # rmp comes back as "NetCDF: Unknown file format"). The canonical
-    # grids/masks/areas in oasis_dir are left untouched for staging.
+    # One OASIS run per link, each in its OWN directory. Running all links as
+    # separate single-rank components writing one shared grids.nc / rmp_*.nc
+    # corrupts them (read-back: "NetCDF: Unknown file format"); disjoint dirs
+    # avoid that. Disjoint dirs also make the runs independent, so they can run
+    # concurrently. Placement, best first:
+    #   - >= nlinks nodes  -> one node per link (srun --exclusive -N1), each link
+    #     gets a whole node's cores; best for the big GAUSWGT search.
+    #   - >= nlinks tasks  -> concurrent steps sharing node(s) (srun --overlap).
+    #   - otherwise        -> sequential.
+    # The canonical grids/masks/areas in oasis_dir are left untouched for staging.
+    nnodes = int(os.environ.get("SLURM_JOB_NUM_NODES",
+                                os.environ.get("SLURM_NNODES", "0")) or 0)
+    ntasks = int(os.environ.get("SLURM_NTASKS", "0") or 0)
+    if launcher is not None or not have_srun:
+        mode = "given"
+    elif nnodes >= len(links):
+        mode = "nodes"
+    elif ntasks >= len(links):
+        mode = "tasks"
+    else:
+        mode = "serial"
+    concurrent = mode in ("nodes", "tasks")
+
+    if launcher is not None:
+        lp = list(launcher)
+    elif not have_srun:
+        lp = ["mpirun", "-n", "1"]
+    else:
+        lp = ["srun", "-n", "1", f"--cpus-per-task={threads}", "--cpu-bind=cores"]
+        if mode == "nodes":
+            lp[1:1] = ["--exclusive", "-N", "1"]   # one whole node per link
+        elif mode == "tasks":
+            lp[1:1] = ["--overlap", "--exact"]      # share node(s) between steps
+
+    jobs = []
     for i, lk in enumerate(links):
         wdir = oasis_dir / f".wg_link{i:02d}"
         if wdir.exists():
@@ -447,13 +466,30 @@ def generate_weights(
         wdir.mkdir()
         for f in ("grids.nc", "masks.nc", "areas.nc"):
             shutil.copy(oasis_dir / f, wdir / f)
-        _run_one(wdir, lk)
-        for rmp in wdir.glob("rmp_*.nc"):
-            shutil.move(str(rmp), str(oasis_dir / rmp.name))
-        shutil.rmtree(wdir)
+        write_namcouple(wdir, [lk])
+        (wdir / "links.json").write_text(json.dumps([lk.as_dict()]))
+        cmd = lp + [py, "-m", "ocp_tool.oasis_weights", str(wdir)]
+        print(f"[oasis_weights] {lk.source}->{lk.target} ({lk.map_name}): {' '.join(cmd)}")
+        proc = subprocess.Popen(cmd, cwd=wdir, env=env)
+        jobs.append((proc, wdir, lk))
+        if not concurrent:
+            proc.wait()
+
+    failures = []
+    for proc, wdir, lk in jobs:
+        rc = proc.wait()
+        if rc != 0:
+            failures.append(f"{lk.source}->{lk.target}({lk.map_name}) rc={rc}")
+        else:
+            for rmp in wdir.glob("rmp_*.nc"):
+                shutil.move(str(rmp), str(oasis_dir / rmp.name))
+        shutil.rmtree(wdir, ignore_errors=True)
+    if failures:
+        raise RuntimeError("oasis_weights: weight generation failed for " + "; ".join(failures))
 
     produced = sorted(p.name for p in oasis_dir.glob("rmp_*.nc"))
-    print(f"[oasis_weights] produced {len(produced)} weight files: {produced}")
+    print(f"[oasis_weights] produced {len(produced)} weight files "
+          f"(placement={mode}): {produced}")
     return [oasis_dir / n for n in produced]
 
 
