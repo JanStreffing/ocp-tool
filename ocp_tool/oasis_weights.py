@@ -142,6 +142,29 @@ def awiesm3_feom_links(atm_grid: str = "A096", method: str = "existing") -> List
 # ---------------------------------------------------------------------------
 # Grid geometry read back from the OASIS description files
 # ---------------------------------------------------------------------------
+def _copy_without_grid(src, dst, prefix: str = "feom"):
+    """Copy an OASIS grid-description file, dropping one grid's vars and dims.
+
+    Used to build a feom-free template before pyfesom2 writes the new feom grid:
+    pyfesom2's incremental writer refuses to change an existing ``x_feom`` size,
+    so the old feom (vars ``feom.*`` and dims ``*_feom``) must be removed first.
+    Atmosphere (A096) and runoff (RnfO) grids are preserved.
+    """
+    with Dataset(src) as ds_in, Dataset(dst, "w", format=ds_in.file_format) as ds_out:
+        ds_out.setncatts({k: ds_in.getncattr(k) for k in ds_in.ncattrs()})
+        drop_dims = {d for d in ds_in.dimensions if d.endswith(f"_{prefix}")}
+        for name, dim in ds_in.dimensions.items():
+            if name in drop_dims:
+                continue
+            ds_out.createDimension(name, None if dim.isunlimited() else len(dim))
+        for name, var in ds_in.variables.items():
+            if name.startswith(f"{prefix}.") or drop_dims.intersection(var.dimensions):
+                continue
+            out = ds_out.createVariable(name, var.datatype, var.dimensions)
+            out.setncatts({k: var.getncattr(k) for k in var.ncattrs()})
+            out[:] = var[:]
+
+
 def _read_var(path: Path, name: str):
     if not path.exists():
         return None
@@ -388,13 +411,13 @@ def regenerate_for_mesh(
     Returns the list of produced rmp_*.nc paths. ``out_dir`` then contains a
     consistent grids/masks/areas + rmp_* set to stage for the next FESOM run.
     """
-    import shutil
-
     template = Path(template_oasis_dir)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Copy the atmosphere/runoff grids but drop any stale feom (its dims would
+    # otherwise block pyfesom2 from writing the new feom node count).
     for f in ("grids.nc", "masks.nc", "areas.nc"):
-        shutil.copy(template / f, out_dir / f)
+        _copy_without_grid(template / f, out_dir / f, prefix="feom")
 
     # Overwrite the feom grid (centres + 4 corners + area + mask) for the new mesh.
     import pyfesom2 as pf
