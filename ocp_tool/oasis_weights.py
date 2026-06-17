@@ -390,14 +390,12 @@ def generate_weights(
     ``launcher`` overrides the MPI launch command (default: srun / mpirun with
     one task per link).
     """
+    import shutil
+
     oasis_dir = Path(oasis_dir).resolve()
     if links is None:
         links = awiesm3_feom_links(atm_grid=atm_grid, method=method)
 
-    write_namcouple(oasis_dir, links)
-    (oasis_dir / "links.json").write_text(json.dumps([lk.as_dict() for lk in links]))
-
-    nlinks = len(links)
     env = dict(os.environ)
     build = oasis_build_path or env.get("OASIS_BUILD_PATH") or env.get("OASIS_DIR")
     if build:
@@ -407,7 +405,7 @@ def generate_weights(
 
     # OASIS computes the SCRIP weights with OpenMP; the per-link cost is
     # dominated by the GAUSWGT nearest-neighbour search over the ~10^5 ocean
-    # nodes, which threads well. Give each rank `threads` cores.
+    # nodes, which threads well. Give the rank `threads` cores.
     threads = max(1, int(threads))
     env["OASIS_OMP_NUM_THREADS"] = str(threads)
     env["OMP_NUM_THREADS"] = str(threads)
@@ -419,20 +417,40 @@ def generate_weights(
         use_corners = any(lk.map_name == "CONSERV" for lk in links)
     env["OCP_USE_CORNERS"] = "1" if use_corners else "0"
 
-    if launcher is None:
-        if subprocess.call(["bash", "-lc", "command -v srun >/dev/null 2>&1"]) == 0:
-            launcher = ["srun", "-n", str(nlinks),
-                        f"--cpus-per-task={threads}", "--cpu-bind=cores"]
-        else:
-            launcher = ["mpirun", "-n", str(nlinks)]
-
     # The srun worker only needs pyoasis + (OpenMPI) mpi4py + netCDF4 -- it reads
     # grids from files, no pyfesom2 -- so it may run a different interpreter than
     # this driver (which needs pyfesom2 to regenerate the feom grid).
     py = worker_python or sys.executable
-    cmd = launcher + [py, "-m", "ocp_tool.oasis_weights", str(oasis_dir)]
-    print(f"[oasis_weights] launching: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True, cwd=oasis_dir, env=env)
+
+    def _run_one(run_dir, run_link):
+        write_namcouple(run_dir, [run_link])
+        (run_dir / "links.json").write_text(json.dumps([run_link.as_dict()]))
+        if launcher is not None:
+            lp = launcher
+        elif subprocess.call(["bash", "-lc", "command -v srun >/dev/null 2>&1"]) == 0:
+            lp = ["srun", "-n", "1", f"--cpus-per-task={threads}", "--cpu-bind=cores"]
+        else:
+            lp = ["mpirun", "-n", "1"]
+        cmd = lp + [py, "-m", "ocp_tool.oasis_weights", str(run_dir)]
+        print(f"[oasis_weights] {run_link.source}->{run_link.target} ({run_link.map_name}): {' '.join(cmd)}")
+        subprocess.run(cmd, check=True, cwd=run_dir, env=env)
+
+    # One OASIS run per link, each in its own directory. Running all links as
+    # separate single-rank components in one job makes them write the shared
+    # grids.nc / rmp_*.nc concurrently and corrupt them (observed: one link's
+    # rmp comes back as "NetCDF: Unknown file format"). The canonical
+    # grids/masks/areas in oasis_dir are left untouched for staging.
+    for i, lk in enumerate(links):
+        wdir = oasis_dir / f".wg_link{i:02d}"
+        if wdir.exists():
+            shutil.rmtree(wdir)
+        wdir.mkdir()
+        for f in ("grids.nc", "masks.nc", "areas.nc"):
+            shutil.copy(oasis_dir / f, wdir / f)
+        _run_one(wdir, lk)
+        for rmp in wdir.glob("rmp_*.nc"):
+            shutil.move(str(rmp), str(oasis_dir / rmp.name))
+        shutil.rmtree(wdir)
 
     produced = sorted(p.name for p in oasis_dir.glob("rmp_*.nc"))
     print(f"[oasis_weights] produced {len(produced)} weight files: {produced}")
