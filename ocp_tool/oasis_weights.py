@@ -165,6 +165,35 @@ def _copy_without_grid(src, dst, prefix: str = "feom"):
             out[:] = var[:]
 
 
+def _strip_feom_corners(grids_path, prefix: str = "feom"):
+    """Remove a grid's corner vars (<prefix>.clo/.cla) and crn_<prefix> dim.
+
+    OASIS/SCRIP reads corners straight from grids.nc, so to do centre-based
+    (GAUSWGT/BICUBIC) remapping with an unstructured FESOM grid the corners must
+    be absent from the file -- passing the dual-cell corners as a *source* grid
+    aborts OASIS. Used for the non-conservative profile.
+    """
+    grids_path = Path(grids_path)
+    tmp = grids_path.with_suffix(".nc.tmp")
+    drop_dim = f"crn_{prefix}"
+    drop_vars = {f"{prefix}.clo", f"{prefix}.cla"}
+    with Dataset(grids_path) as ds_in, Dataset(tmp, "w", format=ds_in.file_format) as ds_out:
+        if drop_dim not in ds_in.dimensions and not (drop_vars & set(ds_in.variables)):
+            return  # nothing to strip
+        ds_out.setncatts({k: ds_in.getncattr(k) for k in ds_in.ncattrs()})
+        for name, dim in ds_in.dimensions.items():
+            if name == drop_dim:
+                continue
+            ds_out.createDimension(name, None if dim.isunlimited() else len(dim))
+        for name, var in ds_in.variables.items():
+            if name in drop_vars or drop_dim in var.dimensions:
+                continue
+            out = ds_out.createVariable(name, var.datatype, var.dimensions)
+            out.setncatts({k: var.getncattr(k) for k in var.ncattrs()})
+            out[:] = var[:]
+    os.replace(tmp, grids_path)
+
+
 def _read_var(path: Path, name: str):
     if not path.exists():
         return None
@@ -439,9 +468,16 @@ def regenerate_for_mesh(
     pf.write_fesom_oasis_files(mesh=mesh, output_dir=str(out_dir),
                                prefix="feom", overwrite=True)
 
+    # Centre-based maps must not see feom corners (OASIS reads them from
+    # grids.nc and aborts when they describe an unstructured *source* grid).
+    use_corners = method == "conserv"
+    if not use_corners:
+        _strip_feom_corners(out_dir / "grids.nc", prefix="feom")
+
     return generate_weights(
         out_dir, atm_grid=atm_grid, method=method, threads=threads,
-        worker_python=worker_python, oasis_build_path=oasis_build_path,
+        use_corners=use_corners, worker_python=worker_python,
+        oasis_build_path=oasis_build_path,
     )
 
 
