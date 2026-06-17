@@ -457,6 +457,18 @@ def generate_weights(
             lp[1:1] = ["--exclusive", "-N", "1"]   # one whole node per link
         elif mode == "tasks":
             lp[1:1] = ["--overlap", "--exact"]      # share node(s) between steps
+        # When ice2fesom runs on the login node (no allocation), srun must
+        # allocate -- give it the account/partition. Inside an allocation these
+        # are inherited and harmless. Walltime keeps a stray allocation bounded.
+        _acct = os.environ.get("OCP_WEIGHTGEN_ACCOUNT")
+        _part = os.environ.get("OCP_WEIGHTGEN_PARTITION")
+        _time = os.environ.get("OCP_WEIGHTGEN_TIME", "00:30:00")
+        if "SLURM_JOB_ID" not in os.environ:
+            if _acct:
+                lp += [f"--account={_acct}"]
+            if _part:
+                lp += [f"--partition={_part}"]
+            lp += [f"--time={_time}"]
 
     jobs = []
     for i, lk in enumerate(links):
