@@ -353,6 +353,52 @@ def generate_weights(
     return [oasis_dir / n for n in produced]
 
 
+# ---------------------------------------------------------------------------
+# High-level entry point for dynamic-mesh coupling (called from ice2fesom)
+# ---------------------------------------------------------------------------
+def regenerate_for_mesh(
+    mesh_path,
+    template_oasis_dir,
+    out_dir,
+    *,
+    method: str = "existing",
+    atm_grid: str = "A096",
+    threads: int = 8,
+    oasis_build_path: Optional[str] = None,
+):
+    """Rebuild the OASIS grid files + feom remap weights for a new FESOM mesh.
+
+    Steps:
+      1. copy grids.nc/masks.nc/areas.nc from ``template_oasis_dir`` (which holds
+         the atmosphere A096 and runoff RnfO grids) into ``out_dir``;
+      2. overwrite the ``feom`` grid in them for ``mesh_path`` (the new submesh),
+         *with corners*, via pyfesom2.write_fesom_oasis_files;
+      3. run pyOASIS to (re)compute rmp_*feom*.nc for the new node count.
+
+    Returns the list of produced rmp_*.nc paths. ``out_dir`` then contains a
+    consistent grids/masks/areas + rmp_* set to stage for the next FESOM run.
+    """
+    import shutil
+
+    template = Path(template_oasis_dir)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for f in ("grids.nc", "masks.nc", "areas.nc"):
+        shutil.copy(template / f, out_dir / f)
+
+    # Overwrite the feom grid (centres + 4 corners + area + mask) for the new mesh.
+    import pyfesom2 as pf
+
+    mesh = pf.load_mesh(str(Path(mesh_path)))
+    pf.write_fesom_oasis_files(mesh=mesh, output_dir=str(out_dir),
+                               prefix="feom", overwrite=True)
+
+    return generate_weights(
+        out_dir, atm_grid=atm_grid, method=method, threads=threads,
+        oasis_build_path=oasis_build_path,
+    )
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.stderr.write("usage: python -m ocp_tool.oasis_weights <run_dir>\n")
