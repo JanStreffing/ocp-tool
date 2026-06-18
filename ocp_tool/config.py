@@ -60,6 +60,7 @@ class ProcessingOptions:
     verbose: bool
     parallel_workers: int
     use_dask: bool
+    generate_rmp: bool = True  # Generate OASIS remapping weight files
 
 
 @dataclass
@@ -184,6 +185,7 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             verbose=raw['options']['verbose'],
             parallel_workers=raw['options']['parallel_workers'],
             use_dask=raw['options']['use_dask'],
+            generate_rmp=raw['options'].get('generate_rmp', True),
         ),
         root_dir=root_dir,
     )

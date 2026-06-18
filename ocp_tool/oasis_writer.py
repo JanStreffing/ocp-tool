@@ -72,6 +72,8 @@ def write_oasis_grid_files(
     # Copy runoff files into OASIS files (skip for AMIP mode - no ocean coupling)
     if config.ocean.grid_name != 'AMIP':
         _append_runoff_to_oasis_files(config, file_types)
+        # Add FESOM ocean grid to OASIS files
+        _append_fesom_grid_to_oasis_files(config)
     else:
         # Add AMIP forcing-reader grid for SST/SIC forcing
         _append_amip_grid_to_oasis_files(config, file_types)
@@ -206,6 +208,45 @@ def _append_runoff_to_oasis_files(config: OCPConfig, file_types: list) -> None:
         nc.close()
         
         print(f"\n {'='*50} \n")
+
+
+def _append_fesom_grid_to_oasis_files(config: OCPConfig) -> None:
+    """Append FESOM ocean grid to OASIS files using pyfesom2."""
+    try:
+        import pyfesom2 as pf
+    except ImportError:
+        print("Warning: pyfesom2 not available, skipping FESOM grid export")
+        return
+    
+    if config.ocean.mesh_file is None:
+        print("Warning: No FESOM mesh file specified, skipping FESOM grid export")
+        return
+    
+    mesh_path = Path(config.ocean.mesh_file).parent
+    print(f" Loading FESOM mesh from: {mesh_path}")
+    
+    try:
+        mesh = pf.load_mesh(str(mesh_path))
+        print(f"  FESOM mesh loaded: {mesh.n2d} nodes, {mesh.e2d} elements")
+        
+        # Write FESOM grid to OASIS files with 'feom' prefix
+        output_dir = config.output_paths.oasis
+        print(f" Adding FESOM grid to OASIS files in: {output_dir}")
+        
+        pf.write_fesom_oasis_files(
+            mesh=mesh,
+            output_dir=str(output_dir),
+            prefix='feom',
+            overwrite=True
+        )
+        
+        print(" FESOM grid successfully added to OASIS files")
+        print(f"\n {'='*50} \n")
+        
+    except Exception as e:
+        print(f"Warning: Failed to add FESOM grid to OASIS files: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def _append_amip_grid_to_oasis_files(config: OCPConfig, file_types: list) -> None:

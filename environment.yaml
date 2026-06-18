@@ -9,10 +9,19 @@ dependencies:
   - pandas
   - pyyaml
   - python-eccodes
+  - python-cdo
+  - scipy
   - git
   - pip
   - jupyterlab
   - notebook
   - tqdm
+  # Optional: OASIS build dependencies (for automatic RMP generation)
+  # Uncomment to enable automatic OASIS3-MCT installation via install_oasis.sh
+  # - fortran-compiler
+  # - c-compiler
+  # - cxx-compiler
+  # - openmpi
+  # - netcdf-fortran
   - pip:
     - git+https://github.com/FESOM/pyfesom2.git
