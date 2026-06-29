@@ -94,6 +94,10 @@ class OCPConfig:
         """Get path to output ICMGG INIT file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIT_{self.ocean.grid_name}'
     
+    def get_icmgg_iniua_input_file(self) -> Path:
+        """Get path to input ICMGG INIUA file."""
+        return self.input_paths.openifs_default / f'ICMGG{self.atmosphere.experiment_name}INIUA'
+
     def get_icmgg_iniua_file(self) -> Path:
         """Get path to output ICMGG INIUA file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIUA'

@@ -14,6 +14,7 @@ import sys
 import time
 from os import makedirs
 from pathlib import Path
+from shutil import copy2
 
 from ocp_tool.config import load_config, OCPConfig
 from ocp_tool.gaussian_grids import generate_gaussian_grid, read_fesom_grid_polygon
@@ -108,6 +109,10 @@ def run_ocp_tool(config: OCPConfig) -> None:
         # Step 7: Interpolate 3D CO2 to INIUA file
         print("\nStep 7: Interpolating 3D CO2 concentrations...")
         icmgg_iniua_file = config.get_icmgg_iniua_file()
+        # Stage the source INIUA into the output dir (mirrors how the INIT
+        # file is copied in process_land_sea_mask); CO2 is then added in place.
+        icmgg_iniua_input = config.get_icmgg_iniua_input_file()
+        copy2(icmgg_iniua_input, icmgg_iniua_file)
         interpolate_co2_to_icmgg(
             str(config.co2_grib_file),
             str(icmgg_iniua_file),
