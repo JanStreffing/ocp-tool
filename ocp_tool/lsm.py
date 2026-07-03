@@ -119,6 +119,66 @@ def read_grib_fields(
     return gribfield, lsm_id, slt_id, cl_id, gid, num_fields
 
 
+def fill_flipped_from_nearest_neighbour(
+    gribfield_mod: List[np.ndarray],
+    lsm_id: int,
+    grid: GaussianGrid,
+    changed_to_land: List[int],
+    changed_to_ocean: List[int],
+    verbose: bool = False,
+) -> None:
+    """
+    Overwrite every surface field of each land-sea-flipped cell with the value
+    from the nearest stable neighbour of its NEW type (great-circle nearest).
+
+    The land-sea mask itself (``lsm_id``) is left untouched so the freshly set
+    coastline is preserved. Donor cells exclude all flipped cells, so a flipped
+    cell is never seeded from another flipped cell.
+    """
+    changed = set(changed_to_land) | set(changed_to_ocean)
+    if not changed:
+        return
+
+    lats = np.deg2rad(np.asarray(grid.center_lats[0], dtype=float))
+    lons = np.deg2rad(np.asarray(grid.center_lons[0], dtype=float))
+    # unit vectors on the sphere -> nearest = largest dot product
+    vx = np.cos(lats) * np.cos(lons)
+    vy = np.cos(lats) * np.sin(lons)
+    vz = np.sin(lats)
+
+    lsm = np.asarray(gribfield_mod[lsm_id], dtype=float)
+    npts = lsm.shape[0]
+    changed_mask = np.zeros(npts, dtype=bool)
+    changed_mask[list(changed)] = True
+    is_land = lsm >= 0.5
+    donor_land = np.where(is_land & ~changed_mask)[0]
+    donor_ocean = np.where(~is_land & ~changed_mask)[0]
+
+    def _nearest(i, donors):
+        dots = vx[donors] * vx[i] + vy[donors] * vy[i] + vz[donors] * vz[i]
+        return int(donors[int(np.argmax(dots))])
+
+    def _seed(cells, donors, label):
+        if len(cells) and donors.size == 0:
+            print(f'  WARNING: no donor cells of type {label}; '
+                  f'{len(cells)} flipped cells left unchanged')
+            return
+        for i in cells:
+            j = _nearest(i, donors)
+            for f in range(len(gribfield_mod)):
+                if f == lsm_id:
+                    continue
+                if len(gribfield_mod[f]) == npts:
+                    gribfield_mod[f][i] = gribfield_mod[f][j]
+
+    _seed(changed_to_land, donor_land, 'land')
+    _seed(changed_to_ocean, donor_ocean, 'ocean')
+
+    if verbose:
+        print(f'  NN-filled {len(changed_to_land)} new-land and '
+              f'{len(changed_to_ocean)} new-ocean cells from nearest neighbours')
+
+
 def modify_lsm(
     gribfield: List[np.ndarray],
     ocean_lsm: np.ndarray,
@@ -132,8 +192,9 @@ def modify_lsm(
     """
     Modify land-sea mask based on ocean model grid.
     
-    - Removes lakes that are ocean in the ocean model
-    - Sets soil type to SANDY CLAY LOAM (6) for removed lakes
+    - Flips the land-sea mask to agree with the ocean model grid
+    - Rebuilds each flipped cell's full surface column from the nearest stable
+      neighbour of its new type (so it is physically self-consistent)
     - Creates masks for different purposes (atmosphere, land, runoff)
     
     Args:
@@ -159,16 +220,30 @@ def modify_lsm(
         # Automatic lake removal based on ocean mask
         # Polygon method: ocean_lsm = 1 means land, 0 means ocean
         n_points = len(gribfield_mod[slt_id])
-        
+
+        changed_to_ocean = []
+        changed_to_land = []
         for i in range(n_points - 1):
             # Point is land in IFS but ocean in FESOM -> make it ocean
             if gribfield_mod[lsm_id][i] >= 0.5 and ocean_lsm[i] < 0.5:
-                gribfield_mod[slt_id][i] = 0
                 gribfield_mod[lsm_id][i] = 0
+                changed_to_ocean.append(i)
             # Point is ocean in IFS but land in FESOM -> make it land
             elif gribfield_mod[lsm_id][i] <= 0.5 and ocean_lsm[i] >= 0.5:
-                gribfield_mod[slt_id][i] = 6  # SANDY CLAY LOAM
                 gribfield_mod[lsm_id][i] = 1
+                changed_to_land.append(i)
+
+        # A flipped cell otherwise keeps the whole surface column of its OLD
+        # type: a new land point retains ocean's zero soil moisture, leftover
+        # sea-ice fraction and SST; a new ocean point retains land soil/skin
+        # state. That mix is physically inconsistent and makes the atmosphere
+        # surface/moist physics produce NaNs. Rebuild each flipped cell from the
+        # nearest stable neighbour of its NEW type so every surface field looks
+        # like its surroundings.
+        fill_flipped_from_nearest_neighbour(
+            gribfield_mod, lsm_id, grid,
+            changed_to_land, changed_to_ocean, verbose=verbose,
+        )
     else:
         print(" Skipped modifying OpenIFS grid, because we are in AMIP mode")
     
