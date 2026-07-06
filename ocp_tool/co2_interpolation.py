@@ -4,13 +4,13 @@
 import numpy as np
 import eccodes
 from scipy.interpolate import LinearNDInterpolator, griddata, interp1d
+from ocp_tool.interp_utils import ReusableGridInterp, _same_points
 import argparse
 import os
 import shutil
 import traceback
 import time
 import dask
-from dask.distributed import Client, LocalCluster
 import warnings
 
 # Suppress some common warnings that might occur during parallel processing
@@ -283,109 +283,28 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         # Start timing for horizontal interpolation loop
         horizontal_start_time = time.time()
         
-        # Define horizontal interpolation function for a single level
-        def interpolate_horizontal_level(co2_level, co2_level_data, icmgg_points, target_shape):
-            # Get data for this level
+        # All CO2 levels share the SAME horizontal source grid (a 3D field on a
+        # fixed grid), so the Delaunay triangulation griddata would rebuild per
+        # level is identical every time. Build it once and reuse it across
+        # levels -- bit-identical to the old per-level griddata (linear + nearest
+        # fill), and fast enough that the Dask cluster is no longer needed (its
+        # process/cluster startup+teardown dwarfed the ~s of actual interp).
+        # The _same_points guard rebuilds only if a level's grid ever differs.
+        _co2_interp = None
+        _co2_ref_pts = None
+        for co2_level in co2_levels:
             co2_values = co2_level_data[co2_level]['values']
-            co2_lats = co2_level_data[co2_level]['lats']
-            co2_lons = co2_level_data[co2_level]['lons']
-            
-            # Create points for interpolation
-            co2_points = np.column_stack((co2_lons, co2_lats))
-            
-            # Linear interpolation with scipy's griddata
-            co2_interpolated = griddata(
-                co2_points, 
-                co2_values, 
-                icmgg_points, 
-                method='linear'
-            )
-            
-            # Fill NaN values with nearest neighbor interpolation
-            if np.isnan(co2_interpolated).any():
-                nan_mask = np.isnan(co2_interpolated)
-                co2_interpolated[nan_mask] = griddata(
-                    co2_points, 
-                    co2_values, 
-                    icmgg_points[nan_mask], 
-                    method='nearest'
-                )
-            
-            # Reshape back to original grid shape
-            co2_interpolated = co2_interpolated.reshape(target_shape)
-            
-            return co2_interpolated
-        
-        if use_dask:
-            # Set up Dask client for parallel processing
+            co2_points = np.column_stack((co2_level_data[co2_level]['lons'],
+                                          co2_level_data[co2_level]['lats']))
+            if _co2_interp is None or not _same_points(co2_points, _co2_ref_pts):
+                _co2_interp = ReusableGridInterp(co2_points)
+                _co2_ref_pts = co2_points
+            co2_interpolated = _co2_interp.linear_with_nearest_fill(
+                co2_values, icmgg_points).reshape(target_shape)
+            co2_horizontal_interpolated[co2_level] = co2_interpolated
             if verbose:
-                print("Setting up Dask client for horizontal interpolation...")
-            
-            # Use a context manager for the Dask client to ensure proper cleanup
-            n_workers = n_workers or os.cpu_count()
-            with LocalCluster(n_workers=n_workers, threads_per_worker=1) as cluster, Client(cluster) as client:
-                if verbose:
-                    print(f"Dask cluster ready with {n_workers} workers")
-                
-                # Create delayed computations for each level
-                delayed_results = []
-                for co2_level in co2_levels:
-                    delayed_result = dask.delayed(interpolate_horizontal_level)(
-                        co2_level, co2_level_data, icmgg_points, target_shape
-                    )
-                    delayed_results.append((co2_level, delayed_result))
-                
-                # Compute all levels in parallel
-                if verbose:
-                    print(f"Computing {len(delayed_results)} horizontal interpolation tasks in parallel...")
-                results = dask.compute(*[res for _, res in delayed_results])
-                
-                # Store results back in the dictionary
-                for i, co2_level in enumerate([level for level, _ in delayed_results]):
-                    co2_horizontal_interpolated[co2_level] = results[i]
-                    if verbose:
-                        print(f"  Level {co2_level}: Horizontal interpolation complete")
-        else:
-            # Sequential processing for each level
-            for co2_level in co2_levels:
-                # Get data for this level
-                co2_values = co2_level_data[co2_level]['values']
-                co2_lats = co2_level_data[co2_level]['lats']
-                co2_lons = co2_level_data[co2_level]['lons']
-                
-                # Create points for interpolation
-                co2_points = np.column_stack((co2_lons, co2_lats))
-                
-                # Linear interpolation with scipy's griddata
-                co2_interpolated = griddata(
-                    co2_points, 
-                    co2_values, 
-                    icmgg_points, 
-                    method='linear'
-                )
-                
-                # Fill NaN values with nearest neighbor interpolation
-                if np.isnan(co2_interpolated).any():
-                    print(f"  Level {co2_level}: Filling NaN values with nearest neighbor interpolation...")
-                    nan_mask = np.isnan(co2_interpolated)
-                    co2_interpolated[nan_mask] = griddata(
-                        co2_points, 
-                        co2_values, 
-                        icmgg_points[nan_mask], 
-                        method='nearest'
-                    )
-                
-                # Reshape back to original grid shape
-                co2_interpolated = co2_interpolated.reshape(target_shape)
-                
-                # Store interpolated data for this level
-                co2_horizontal_interpolated[co2_level] = co2_interpolated
-                
-                if verbose:
-                    print(f"  Level {co2_level}: Horizontal interpolation complete")
-            
-            # Remove duplicate print for verbose output (already printed inside the loop)
-            
+                print(f"  Level {co2_level}: Horizontal interpolation complete")
+
         # Calculate and print horizontal interpolation timing
         horizontal_end_time = time.time()
         horizontal_duration = horizontal_end_time - horizontal_start_time
@@ -457,114 +376,28 @@ def interpolate_co2_to_icmgg(co2_grib_file, icmgg_iniua_file, output_file=None, 
         # Initialize result dictionary
         co2_interpolated_3d = {}
         
-        if use_dask:
-            # Use Dask for parallel processing of vertical interpolation
+        # Vectorised vertical interpolation (replaces the per-point interp1d
+        # nested loop and the Dask cluster). The horizontal step's nearest-
+        # neighbour fill leaves no NaNs, so every column shares the same full set
+        # of source levels -> the per-point interp1d collapses to a single axis-0
+        # interp1d over the stacked field, evaluated for all columns at once.
+        # Bit-identical to the old per-point linear interpolation, no cluster.
+        co2_3d = np.stack([co2_horizontal_interpolated[level] for level in co2_levels], axis=0)
+        src_levels_all = np.array([float(level) for level in co2_levels])
+        vinterp = interp1d(src_levels_all, co2_3d, axis=0, kind='linear',
+                           bounds_error=False, fill_value='extrapolate')
+        for target_level in icmgg_levels:
+            has_pressure = (target_level in level_data
+                            and 'pressure' in level_data[target_level])
+            if has_pressure:
+                co2_interpolated_3d[target_level] = vinterp(float(target_level))
+            else:
+                nearest_idx = int(np.abs(src_levels_all - float(target_level)).argmin())
+                co2_interpolated_3d[target_level] = \
+                    co2_horizontal_interpolated[co2_levels[nearest_idx]].copy()
             if verbose:
-                print("Setting up Dask client for vertical interpolation...")
-            
-            # Use a context manager for the Dask client
-            n_workers = n_workers or os.cpu_count()
-            with LocalCluster(n_workers=n_workers, threads_per_worker=1) as cluster, Client(cluster) as client:
-                if verbose:
-                    print(f"Dask cluster ready with {n_workers} workers")
-                
-                # Create delayed computations for each target level
-                delayed_results = []
-                for target_level in icmgg_levels:
-                    if verbose:
-                        print(f"  Preparing target level {target_level} for parallel processing...")
-                    
-                    delayed_result = dask.delayed(interpolate_vertical_level)(
-                        target_level, icmgg_levels, co2_levels, 
-                        co2_horizontal_interpolated, level_data, target_shape
-                    )
-                    delayed_results.append((target_level, delayed_result))
-                
-                # Compute all levels in parallel
-                if verbose:
-                    print(f"Computing {len(delayed_results)} vertical interpolation tasks in parallel...")
-                results = dask.compute(*[res for _, res in delayed_results])
-                
-                # Store results back in the dictionary
-                for i, target_level in enumerate([level for level, _ in delayed_results]):
-                    co2_interpolated_3d[target_level] = results[i]
-                    if verbose:
-                        print(f"  Level {target_level}: Vertical interpolation complete")
-                        print(f"  Level {target_level}: CO2 range: {np.min(co2_interpolated_3d[target_level])} to {np.max(co2_interpolated_3d[target_level])}")
-        else:
-            # Sequential processing for each target level
-            for target_level in icmgg_levels:
-                print(f"  Processing target level {target_level}...")
-                
-                # Initialize array for this level with the same shape as the target grid
-                co2_interpolated_3d[target_level] = np.zeros(target_shape)
-                
-                # Loop through each grid point and perform 1D vertical interpolation
-                total_points = target_shape[0] * target_shape[1] if len(target_shape) > 1 else target_shape[0]
-                
-                # For efficiency, reshape arrays to 2D if they're not already
-                flat_shape = (total_points,)
-                
-                # Check if array is 1D or 2D
-                is_2d = len(target_shape) > 1
-                
-                # Create a vertical profile for each grid point
-                for i in range(target_shape[0]):
-                    if is_2d:
-                        for j in range(target_shape[1]):
-                            # Extract CO2 values for this grid point at all source levels
-                            source_levels = np.array(co2_levels, dtype=float)
-                            
-                            # Extract CO2 values for this grid point at all source levels
-                            source_values = np.array([co2_horizontal_interpolated[level][i, j] for level in co2_levels])
-                            
-                            # Create 1D interpolator for the vertical profile
-                            try:
-                                if len(source_levels) > 1:  # Need at least 2 points for interpolation
-                                    vertical_interp = interp1d(source_levels, source_values, 
-                                                            kind='linear', bounds_error=False, fill_value="extrapolate")
-                                    # Interpolate to the target level
-                                    co2_interpolated_3d[target_level][i, j] = vertical_interp(float(target_level))
-                                else:
-                                    # If only one source level, use that value for all target levels
-                                    co2_interpolated_3d[target_level][i, j] = source_values[0]
-                            except Exception as e:
-                                # In case of interpolation errors, use nearest source level
-                                if len(source_levels) > 0:
-                                    nearest_idx = np.abs(source_levels - float(target_level)).argmin()
-                                    co2_interpolated_3d[target_level][i, j] = source_values[nearest_idx]
-                                else:
-                                    # If no source levels, set to default value
-                                    co2_interpolated_3d[target_level][i, j] = 0.0006  # Default CO2 value
-                    else:
-                        # For 1D arrays
-                        source_levels = np.array(co2_levels, dtype=float)
-                        # Extract CO2 values for this grid point at all source levels
-                        source_values = np.array([co2_horizontal_interpolated[level][i] for level in co2_levels])
-                        
-                        # Create 1D interpolator for the vertical profile
-                        try:
-                            if len(source_levels) > 1:  # Need at least 2 points for interpolation
-                                vertical_interp = interp1d(source_levels, source_values, 
-                                                        kind='linear', bounds_error=False, fill_value="extrapolate")
-                                # Interpolate to the target level
-                                co2_interpolated_3d[target_level][i] = vertical_interp(float(target_level))
-                            else:
-                                # If only one source level, use that value for all target levels
-                                co2_interpolated_3d[target_level][i] = source_values[0]
-                        except Exception as e:
-                            # In case of interpolation errors, use nearest source level
-                            if len(source_levels) > 0:
-                                nearest_idx = np.abs(source_levels - float(target_level)).argmin()
-                                co2_interpolated_3d[target_level][i] = source_values[nearest_idx]
-                            else:
-                                # If no source levels, set to default value
-                                co2_interpolated_3d[target_level][i] = 0.0006  # Default CO2 value
-                
-                if verbose:
-                    print(f"  Level {target_level}: Vertical interpolation complete")
-                    print(f"  Level {target_level}: CO2 range: {np.min(co2_interpolated_3d[target_level])} to {np.max(co2_interpolated_3d[target_level])}")
-        
+                print(f"  Level {target_level}: Vertical interpolation complete")
+
         # Calculate and print vertical interpolation timing
         vertical_end_time = time.time()
         vertical_duration = vertical_end_time - vertical_start_time
