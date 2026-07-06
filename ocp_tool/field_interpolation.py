@@ -8,6 +8,7 @@ import traceback
 import shutil
 import warnings
 from scipy.interpolate import griddata
+from ocp_tool.interp_utils import ReusableGridInterp, _same_points
 import eccodes
 import subprocess
 from pathlib import Path
@@ -83,7 +84,11 @@ def interpolate_co2_emissions(input_grib_file, icmgg_init_file, output_file, var
     # Prepare target points for interpolation
     target_points = np.column_stack((target_lons.flatten(), target_lats.flatten()))
     target_shape = target_lats.shape
-    
+    # Reuse one triangulation + target point-location across all fields that share
+    # a source grid (rebuilt only if a field's grid differs) -- see interp_utils.
+    _fi_interp = None
+    _fi_src = None
+
     # Step 2: Read and interpolate each CO2 emission variable
     try:
         # First pass: identify all emissions variables
@@ -134,7 +139,10 @@ def interpolate_co2_emissions(input_grib_file, icmgg_init_file, output_file, var
                     
                     # Create source points for interpolation
                     source_points = np.column_stack((lons, lats))
-                    
+                    if _fi_interp is None or not _same_points(source_points, _fi_src):
+                        _fi_interp = ReusableGridInterp(source_points)
+                        _fi_src = source_points
+
                     # Get the original paramId and apply mapping if necessary
                     original_param_id = eccodes.codes_get(gid, 'paramId')
                     mapped_param_id = param_id_mapping.get(original_param_id, original_param_id)
@@ -148,15 +156,11 @@ def interpolate_co2_emissions(input_grib_file, icmgg_init_file, output_file, var
                         'grid_type': eccodes.codes_get(gid, 'gridType')
                     }
                     
-                    # Linear interpolation with scipy's griddata
+                    # Linear interpolation, reusing the cached triangulation +
+                    # point-location (bit-identical to griddata, fill_value=0).
                     print(f"Interpolating {short_name} to target grid...")
-                    interpolated_values = griddata(
-                        source_points, 
-                        values, 
-                        target_points, 
-                        method='linear', 
-                        fill_value=0
-                    )
+                    interpolated_values = _fi_interp.linear(
+                        values, target_points, fill_value=0)
                     
                     # Reshape to match target grid
                     interpolated_values = interpolated_values.reshape(target_shape)
@@ -299,7 +303,10 @@ def interpolate_albedo_fields(input_grib_file, icmgg_init_file, output_file, ver
     # Prepare target points for interpolation
     target_points = np.column_stack((target_lons.flatten(), target_lats.flatten()))
     target_shape = target_lats.shape
-    
+    # Reuse one KD-tree across all albedo fields sharing a source grid.
+    _alb_interp = None
+    _alb_src = None
+
     try:
         print(f"Interpolating albedo fields to match {output_file} grid using Python")
         
@@ -348,7 +355,10 @@ def interpolate_albedo_fields(input_grib_file, icmgg_init_file, output_file, ver
                     
                     # Create source points for interpolation
                     source_points = np.column_stack((lons, lats))
-                    
+                    if _alb_interp is None or not _same_points(source_points, _alb_src):
+                        _alb_interp = ReusableGridInterp(source_points)
+                        _alb_src = source_points
+
                     # Store the original GRIB message information for template
                     template_info = {
                         'short_name': short_name,
@@ -360,13 +370,8 @@ def interpolate_albedo_fields(input_grib_file, icmgg_init_file, output_file, ver
                     if verbose:
                         print(f"Interpolating field with paramId {param_id} (shortName: {short_name})")
                     
-                    # Use nearest neighbor interpolation for albedo fields
-                    interpolated_values = griddata(
-                        source_points, 
-                        values, 
-                        target_points, 
-                        method='nearest'
-                    )
+                    # Nearest-neighbour for albedo, reusing the cached KD-tree.
+                    interpolated_values = _alb_interp.nearest(values, target_points)
                     
                     # Reshape to target grid dimensions
                     interpolated_values = interpolated_values.reshape(target_shape)
