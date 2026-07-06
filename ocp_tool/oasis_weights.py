@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -409,6 +410,12 @@ def generate_weights(
     threads = max(1, int(threads))
     env["OASIS_OMP_NUM_THREADS"] = str(threads)
     env["OMP_NUM_THREADS"] = str(threads)
+    # -qopenmp (needed for the parallel SCRIP) makes ifort place large automatic
+    # arrays on the stack. The OpenMP threads' private arrays need a big per-thread
+    # stack, and MCT's O(10^5) sparse-matrix sort in oasis_enddef overflows the
+    # default main-thread stack -> SIGSEGV on large-target links. Give the OMP
+    # threads a large stack and lift the main-thread limit (done at launch below).
+    env["OMP_STACKSIZE"] = os.environ.get("OMP_STACKSIZE", "256M")
 
     # Corners are only used by conservative remapping; default to using them
     # only when a CONSERV link is present (passing FESOM corners as a source
@@ -480,7 +487,11 @@ def generate_weights(
             shutil.copy(oasis_dir / f, wdir / f)
         write_namcouple(wdir, [lk])
         (wdir / "links.json").write_text(json.dumps([lk.as_dict()]))
-        cmd = lp + [py, "-m", "ocp_tool.oasis_weights", str(wdir)]
+        # Lift the main-thread stack for MCT's large sparse-matrix sort (see the
+        # OMP_STACKSIZE note above). Run the worker under `bash -c` with an
+        # unlimited stack; -c (not -lc) keeps the env dict we pass to Popen.
+        worker = f"ulimit -s unlimited; exec {shlex.quote(py)} -m ocp_tool.oasis_weights {shlex.quote(str(wdir))}"
+        cmd = lp + ["bash", "-c", worker]
         print(f"[oasis_weights] {lk.source}->{lk.target} ({lk.map_name}): {' '.join(cmd)}")
         proc = subprocess.Popen(cmd, cwd=wdir, env=env)
         jobs.append((proc, wdir, lk))
