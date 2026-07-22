@@ -83,10 +83,18 @@ def run_ocp_tool(config: OCPConfig) -> None:
         if config.ocean.grid_name != 'AMIP' and config.options.generate_rmp:
             print("\nStep 4b: Generating OASIS remapping weight files...")
             try:
+                # Atmosphere grid name in grids.nc is 'A{nn:03d}' (same rule as
+                # write_oasis_grid_files); derive it so links point at the actual
+                # grid (e.g. A640 for TCO639) instead of the A096 default.
+                atm_nn = grid.nn
+                if len(str(atm_nn)) > 4:
+                    atm_nn = int(str(atm_nn)[:-1])
+                atm_grid_name = f'A{atm_nn:03d}'
                 rmp_files = generate_rmp_files(
                     oasis_dir=config.output_paths.oasis,
                     coupling_links=None,  # Use default IFS-FESOM links
-                    component_name="ocp_tool"
+                    component_name="ocp_tool",
+                    atm_grid=atm_grid_name,
                 )
                 if rmp_files:
                     print(f"✓ Generated {len(rmp_files)} remapping weight files")
