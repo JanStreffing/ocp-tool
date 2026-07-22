@@ -1,0 +1,40 @@
+# OCP-Tool Configuration
+# OpenIFS Coupling Preparation Tool
+# Configuration: TCO639 + NEXT (without ice cavities)
+# Target OASIS/OpenIFS input dir: /work/ab0246/a270092/input/oifs-48r1/TCO639L137
+
+# Atmosphere grid settings
+atmosphere:
+  resolution_list: [639]  # TCO639
+  truncation_type: "cubic-octahedral"
+  experiment_name: "acfm"  # ICMGGacfmINIT/INIUA, ICMSHacfmINIT in target dir
+
+# Ocean grid settings
+ocean:
+  grid_name: "NEXT"
+  has_ice_cavities: false
+  # mesh.nc does not exist yet; generated from the ASCII FESOM mesh via pyfesom2
+  mesh_file: "/work/ab0246/a270092/input/fesom2/next/mesh/mesh.nc"
+
+# Basin modifications for runoff
+runoff:
+  manual_basin_removal:
+    - "caspian-sea"
+
+# Paths (relative to auto-detected root_dir, or absolute)
+# Output dirs auto-computed as: output/{TCO|TL}{resolution}_{ocean_grid}/
+paths:
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+
+# Processing options
+options:
+  verbose: true
+  parallel_workers: 4
+  use_dask: true

@@ -1,5 +1,7 @@
 input/
 output/
+logs/
+env/
 *~lock*
 *ICMGG*
 griddes.txt 
