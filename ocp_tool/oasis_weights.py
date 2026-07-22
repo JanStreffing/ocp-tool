@@ -289,12 +289,18 @@ def component_names(nlinks: int, prefix: str = "ocpw") -> List[str]:
     return [f"{prefix}{i:02d}" for i in range(nlinks)]
 
 
-def write_namcouple(run_dir: Path, links: List[Link], runtime: int = 3600):
+def write_namcouple(run_dir: Path, links: List[Link], runtime: int = 3600,
+                    cdf_filetype: str = "cdf2"):
     """Write a namcouple that makes OASIS compute one SCRIPR weight file per link.
 
     Format mirrors the model's own namcouple exactly: $NBMODEL with the per-rank
     component names, then for each field the grid-size line
     ``<snx> <sny> <tnx> <tny> <src> <tgt> LAG=0`` and a single SCRIPR transform.
+
+    ``cdf_filetype`` sets $NCDFTYP (OASIS default is 'cdf1' = classic NetCDF, whose
+    2 GiB/variable limit is exceeded by high-res weight files -> write_remap_scrip
+    fails with "variable sizes violate format constraints"). 'cdf2' (64-bit offset,
+    ~4 GiB/var) fixes that; 'cdf5' needs OASIS built with -DCDF_64BIT_DATA.
     """
     comps = component_names(len(links))
     lines = [
@@ -303,6 +309,7 @@ def write_namcouple(run_dir: Path, links: List[Link], runtime: int = 3600):
         " $NBMODEL", f"   {len(comps)} " + " ".join(comps), " $END",
         " $RUNTIME", f"   {runtime}", " $END",
         " $NLOGPRT", "   1 0 0", " $END",
+        " $NCDFTYP", f"   {cdf_filetype}", " $END",
         " $NNOREST", "   T", " $END",
         " $STRINGS",
     ]
