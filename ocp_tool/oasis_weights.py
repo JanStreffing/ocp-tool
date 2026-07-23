@@ -124,19 +124,29 @@ def awiesm3_feom_links(atm_grid: str = "A096", method: str = "existing") -> List
     if method not in ("existing", "conserv"):
         raise ValueError(f"unknown method profile: {method}")
     gauswgt = "GAUSWGT D SCALAR LATITUDE 1 25 0.1"
-    gauswgt_u = "GAUSWGT U SCALAR LATITUDE 1 25 0.1"
+    # feom -> atm (SST/ice/currents) neighbour count is resolution-dependent. The
+    # coarse TCO95/A096 atmosphere needs 25 neighbours (that is its namcouple
+    # value); 9 is the default for higher-resolution atmospheres (e.g. TCO639).
+    if atm_grid == "A096":
+        gauswgt_u = "GAUSWGT U SCALAR LATITUDE 1 25 0.1"
+    else:
+        gauswgt_u = "GAUSWGT U SCALAR LATITUDE 1 9 2"
     bicubic = "BICUBIC D SCALAR LATITUDE 15"
     gauswgt_lr = "GAUSWGT LR SCALAR LATITUDE 1 25 0.1"
     conserv_lr = "CONSERV LR SCALAR LATITUDE 1 25 0.1"
 
     flux_atm_to_oce = conserv_lr if method == "conserv" else gauswgt
     rnf_to_oce = conserv_lr if method == "conserv" else gauswgt_lr
+    # Runoff atmosphere grid is the reduced-gaussian R-grid matching atm_grid
+    # (A640 -> R640): runoff/calving from atm land onto the runoff-mapper grid.
+    rnf_atm_grid = "R" + atm_grid[1:]
 
     return [
-        Link(atm_grid, "feom", flux_atm_to_oce),   # A096 -> feom (heat/freshwater fluxes)
-        Link(atm_grid, "feom", bicubic),           # A096 -> feom (state, bicubic)
-        Link("feom", atm_grid, gauswgt_u),         # feom -> A096 (SST, ice state)
-        Link("RnfO", "feom", rnf_to_oce),          # runoff -> feom
+        Link(atm_grid, "feom", flux_atm_to_oce),   # A640 -> feom (heat/freshwater fluxes)
+        Link(atm_grid, "feom", bicubic),           # A640 -> feom (state, bicubic)
+        Link("feom", atm_grid, gauswgt_u),         # feom -> atm (SST, ice state; 25 nn @A096, else 9)
+        Link(rnf_atm_grid, "RnfA", gauswgt),       # R640 -> RnfA (runoff/calving to mapper)
+        Link("RnfO", "feom", rnf_to_oce),          # RnfO -> feom (runoff to ocean)
     ]
 
 
