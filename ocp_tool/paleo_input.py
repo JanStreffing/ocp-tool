@@ -331,12 +331,6 @@ def _read_all_grib_fields(grib_file: Path) -> Dict[FieldKey, np.ndarray]:
     return fields
 
 
-def _levels_of_code(grib_file: Path, param_code: int) -> List[int]:
-    """Sorted, de-duplicated levels on which ``param_code`` appears."""
-    levels = {lev for code, lev in _read_all_grib_fields(grib_file) if code == param_code}
-    return sorted(levels)
-
-
 def _replace_grib_fields(
     input_file: Path,
     output_file: Path,
