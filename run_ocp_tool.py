@@ -14,11 +14,13 @@ import sys
 import time
 from os import makedirs
 from pathlib import Path
+from shutil import copy2
 
 from ocp_tool.config import load_config, OCPConfig
 from ocp_tool.gaussian_grids import generate_gaussian_grid, read_fesom_grid_polygon
 from ocp_tool.lsm import process_land_sea_mask, create_slt_output_for_lpjg
 from ocp_tool.oasis_writer import write_oasis_grid_files, interpolate_vegin_data
+from ocp_tool.oasis_remap import generate_rmp_files
 from ocp_tool.runoff import modify_runoff_map, modify_runoff_lsm
 from ocp_tool.plotting import plot_land_sea_mask, plot_runoff_maps
 from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
@@ -81,6 +83,33 @@ def run_ocp_tool(config: OCPConfig) -> None:
             parallel=False  # Disabled: NetCDF4/HDF5 race conditions with parallel writes
         )
         
+        # Step 4b: Generate OASIS remapping weights (skip for AMIP - no ocean coupling)
+        if config.ocean.grid_name != 'AMIP' and config.options.generate_rmp:
+            print("\nStep 4b: Generating OASIS remapping weight files...")
+            try:
+                # Atmosphere grid name in grids.nc is 'A{nn:03d}' (same rule as
+                # write_oasis_grid_files); derive it so links point at the actual
+                # grid (e.g. A640 for TCO639) instead of the A096 default.
+                atm_nn = grid.nn
+                if len(str(atm_nn)) > 4:
+                    atm_nn = int(str(atm_nn)[:-1])
+                atm_grid_name = f'A{atm_nn:03d}'
+                rmp_files = generate_rmp_files(
+                    oasis_dir=config.output_paths.oasis,
+                    coupling_links=None,  # Use default IFS-FESOM links
+                    component_name="ocp_tool",
+                    atm_grid=atm_grid_name,
+                )
+                if rmp_files:
+                    print(f"✓ Generated {len(rmp_files)} remapping weight files")
+            except Exception as e:
+                print(f"Warning: Failed to generate rmp files: {e}")
+                print("  You can generate them later using OASIS3-MCT or ESMF_RegridWeightGen")
+        elif config.ocean.grid_name == 'AMIP':
+            print("\nStep 4b: Skipped rmp generation (AMIP mode - no ocean coupling)")
+        else:
+            print("\nStep 4b: Skipped rmp generation (disabled in config)")
+        
         # Step 5: Interpolate vegetation and CO2 data
         print("\nStep 5: Interpolating vegetation and CO2 restart data...")
         interpolate_vegin_data(config, grid)
@@ -92,6 +121,10 @@ def run_ocp_tool(config: OCPConfig) -> None:
         # Step 7: Interpolate 3D CO2 to INIUA file
         print("\nStep 7: Interpolating 3D CO2 concentrations...")
         icmgg_iniua_file = config.get_icmgg_iniua_file()
+        # Stage the source INIUA into the output dir (mirrors how the INIT
+        # file is copied in process_land_sea_mask); CO2 is then added in place.
+        icmgg_iniua_input = config.get_icmgg_iniua_input_file()
+        copy2(icmgg_iniua_input, icmgg_iniua_file)
         interpolate_co2_to_icmgg(
             str(config.co2_grib_file),
             str(icmgg_iniua_file),

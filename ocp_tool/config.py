@@ -97,6 +97,7 @@ class ProcessingOptions:
     verbose: bool
     parallel_workers: int
     use_dask: bool
+    generate_rmp: bool = True  # Generate OASIS remapping weight files
 
 
 @dataclass
@@ -149,6 +150,10 @@ class OCPConfig:
         """Get path to output ICMGG INIT file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIT_{self.ocean.grid_name}'
     
+    def get_icmgg_iniua_input_file(self) -> Path:
+        """Get path to input ICMGG INIUA file."""
+        return self.input_paths.openifs_default / f'ICMGG{self.atmosphere.experiment_name}INIUA'
+
     def get_icmgg_iniua_file(self) -> Path:
         """Get path to output ICMGG INIUA file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIUA'
@@ -252,6 +257,7 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             verbose=raw['options']['verbose'],
             parallel_workers=raw['options']['parallel_workers'],
             use_dask=raw['options']['use_dask'],
+            generate_rmp=raw['options'].get('generate_rmp', True),
         ),
         root_dir=root_dir,
         paleo=_load_paleo_config(raw, resolve_path) if 'paleo' in raw else None,
