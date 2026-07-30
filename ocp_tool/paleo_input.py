@@ -12,7 +12,7 @@ Operates directly on the OpenIFS Gaussian grid.
 import copy
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from netCDF4 import Dataset
@@ -20,8 +20,20 @@ from scipy.interpolate import griddata, NearestNDInterpolator
 import eccodes
 
 from .config import OCPConfig, PaleoConfig
+from .cycles import CycleSpec
 from .gaussian_grids import GaussianGrid
 from .lsm import LSMData, read_grib_fields
+
+# A GRIB message is identified by (code, level). Replacements may also be keyed
+# by a bare code, meaning "every level of this code" — see _replace_grib_fields.
+FieldKey = Tuple[int, int]
+ReplacementKey = Union[int, FieldKey]
+
+# GRIB2 (discipline, parameterCategory, parameterNumber) → IFS GRIB code, for
+# messages that ecCodes cannot resolve to a paramId on its own.
+GRIB2_CODE_FALLBACK = {
+    (0, 19, 192): 32,  # snow albedo on snowLayer levels
+}
 
 # ---------------------------------------------------------------------------
 # Lookup tables: PlioMIP3 reconstruction → OpenIFS categories
@@ -73,15 +85,23 @@ HIGH_VEG_LAI_LOOKUP = {3: 5.9, 4: 4.89, 5: 5.97, 6: 6.44}
 # Low vegetation type → LAI (code 66)
 LOW_VEG_LAI_LOOKUP = {2: 2.92, 7: 3.79, 9: 2.95, 11: 3.11}
 
-# GRIB codes for remaining fields that need drowned/added interpolation
+# GRIB codes for remaining fields that need drowned/added interpolation.
+# Codes present on several levels (the CY48R1 snow block) are filled level by
+# level; see interpolate_remaining_fields.
 REMAINING_FIELD_CODES = [
     139, 170, 183, 236,  # soil temperatures
     198,                  # skin reservoir content
     235,                  # skin temperature
     31,                   # sea ice fraction
-    8, 9, 10, 11, 12, 13, 14,  # lake variables
-    238,                  # snow layer temperature
-    32, 33, 34,           # snow albedo, density, SST
+    # Lake variables. mod_input_oifs.sh listed these as 8-14, which is correct
+    # for `cdo -selcode`: CDO matches indicatorOfParameter within table 228.
+    # This port matches on ecCodes paramId instead, where the same fields are
+    # 228008-228014, so the numbers have to change with the matching semantics
+    # — as 8-14 they match nothing and were skipped without an error.
+    228008, 228009, 228010, 228011, 228012, 228013, 228014,
+    238,                  # snow temperature
+    32, 33,               # snow albedo, snow density
+    34,                   # SST
     35, 36, 37, 38,       # ice temperatures
     148,                  # Charnock parameter
     174,                  # albedo
@@ -207,6 +227,21 @@ def _distance_weighted_fill(
     return result
 
 
+def _read_total_snow_mass(grib_file: Path, cycle: CycleSpec) -> Optional[np.ndarray]:
+    """
+    Total column snow mass from an ICMGG file, in the file's own units.
+
+    On CY43R3 this is the single ``141`` field; on CY48R1 the ``228141``
+    messages are summed over the snow layers, since no individual layer holds
+    the column total.
+    """
+    fields = _read_all_grib_fields(grib_file)
+    layers = [v for (code, _), v in fields.items() if code == cycle.snow_mass_code]
+    if not layers:
+        return None
+    return np.sum(layers, axis=0)
+
+
 def _apply_lookup(field: np.ndarray, lookup: Dict, default: float = 0.0) -> np.ndarray:
     """Map integer categories through a lookup table."""
     result = np.full_like(field, default, dtype=np.float64)
@@ -215,9 +250,45 @@ def _apply_lookup(field: np.ndarray, lookup: Dict, default: float = 0.0) -> np.n
     return result
 
 
-def _get_grib_field_by_code(grib_file: Path, param_code: int) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+def _message_code(gid) -> int:
     """
-    Read a single GRIB field by parameter code, returning (values, lats, lons).
+    GRIB code of a message, as OpenIFS itself reports it.
+
+    ``paramId`` is used where ecCodes resolves it. The multi-layer snow albedo
+    is encoded by IFS as GRIB2 (discipline 0, category 19, number 192), which
+    is not in every ecCodes definition set — older builds return ``paramId``
+    0 there, newer ones return 32. Both end up as 32, matching the code
+    OpenIFS prints in NODE (``GRIB CODE 32 READ FROM GRIB FILE INTO SNOWG``).
+    """
+    code = int(eccodes.codes_get(gid, 'paramId'))
+    if code != 0:
+        return code
+    try:
+        triple = (
+            int(eccodes.codes_get(gid, 'discipline')),
+            int(eccodes.codes_get(gid, 'parameterCategory')),
+            int(eccodes.codes_get(gid, 'parameterNumber')),
+        )
+    except eccodes.KeyValueNotFoundError:
+        return 0
+    return GRIB2_CODE_FALLBACK.get(triple, 0)
+
+
+def _message_key(gid) -> FieldKey:
+    """(code, level) identifying a GRIB message."""
+    return _message_code(gid), int(eccodes.codes_get(gid, 'level'))
+
+
+def _get_grib_field_by_code(
+    grib_file: Path,
+    param_code: int,
+    level: Optional[int] = None,
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+    """
+    Read a single GRIB field by code, returning (values, lats, lons).
+
+    Returns the first matching message. Pass ``level`` to disambiguate fields
+    that exist on more than one level, such as the multi-layer snow block.
     """
     with open(grib_file, 'rb') as f:
         while True:
@@ -225,8 +296,8 @@ def _get_grib_field_by_code(grib_file: Path, param_code: int) -> Tuple[Optional[
             if gid is None:
                 break
             try:
-                code = eccodes.codes_get(gid, 'paramId')
-                if code == param_code:
+                code, lev = _message_key(gid)
+                if code == param_code and (level is None or lev == level):
                     vals = eccodes.codes_get_array(gid, 'values')
                     lats = eccodes.codes_get_array(gid, 'latitudes')
                     lons = eccodes.codes_get_array(gid, 'longitudes')
@@ -236,38 +307,64 @@ def _get_grib_field_by_code(grib_file: Path, param_code: int) -> Tuple[Optional[
     return None, None, None
 
 
-def _read_all_grib_fields(grib_file: Path) -> Dict[int, np.ndarray]:
-    """Read all fields from a GRIB file, keyed by paramId."""
-    fields = {}
+def _read_all_grib_fields(grib_file: Path) -> Dict[FieldKey, np.ndarray]:
+    """
+    Read all fields from a GRIB file, keyed by (code, level).
+
+    Keying on the code alone would collapse the five layers of the CY48R1
+    snow block onto one entry. Where a (code, level) pair genuinely repeats —
+    some ICMGG files carry lsm, cl and dl twice — the first occurrence wins,
+    matching :func:`_get_grib_field_by_code`.
+    """
+    fields: Dict[FieldKey, np.ndarray] = {}
     with open(grib_file, 'rb') as f:
         while True:
             gid = eccodes.codes_grib_new_from_file(f)
             if gid is None:
                 break
             try:
-                code = eccodes.codes_get(gid, 'paramId')
-                vals = eccodes.codes_get_array(gid, 'values')
-                fields[code] = vals
+                key = _message_key(gid)
+                if key not in fields:
+                    fields[key] = eccodes.codes_get_array(gid, 'values')
             finally:
                 eccodes.codes_release(gid)
     return fields
 
 
+def _levels_of_code(grib_file: Path, param_code: int) -> List[int]:
+    """Sorted, de-duplicated levels on which ``param_code`` appears."""
+    levels = {lev for code, lev in _read_all_grib_fields(grib_file) if code == param_code}
+    return sorted(levels)
+
+
 def _replace_grib_fields(
     input_file: Path,
     output_file: Path,
-    replacements: Dict[int, np.ndarray],
+    replacements: Dict[ReplacementKey, np.ndarray],
     verbose: bool = False,
 ) -> None:
     """
-    Copy a GRIB file, replacing specific fields identified by paramId.
+    Copy a GRIB file, replacing the values of selected messages.
 
-    Parameters
-    ----------
-    input_file : source GRIB
-    output_file : destination GRIB
-    replacements : dict mapping paramId → new values array
+    Keys are either ``(code, level)`` for a single message, or a bare ``code``
+    meaning every message with that code regardless of level. The bare form is
+    what duplicated surface fields need (both copies of ``cl`` must receive the
+    new lake cover), but it is a trap for fields that live on several levels:
+    a bare ``238`` would write one profile into all five snow layers. Such a
+    key is rejected rather than silently applied.
     """
+    all_keys = set(_read_all_grib_fields(input_file))
+    for key in replacements:
+        if isinstance(key, tuple):
+            continue
+        levels = sorted({lev for code, lev in all_keys if code == key})
+        if len(levels) > 1:
+            raise ValueError(
+                f"GRIB code {key} exists on levels {levels} in {input_file}; "
+                f"replace it per level with ('{key}', <level>) keys instead of "
+                f"a bare code, or the same field is written to every level."
+            )
+
     # Read all messages into memory first
     messages = []
     with open(input_file, 'rb') as f:
@@ -277,15 +374,21 @@ def _replace_grib_fields(
                 break
             messages.append(gid)
 
+    written = 0
     with open(output_file, 'wb') as f:
         for gid in messages:
-            code = eccodes.codes_get(gid, 'paramId')
-            if code in replacements:
-                eccodes.codes_set_array(gid, 'values', replacements[code].astype(np.float64))
+            code, level = _message_key(gid)
+            values = replacements.get((code, level), replacements.get(code))
+            if values is not None:
+                eccodes.codes_set_array(gid, 'values', values.astype(np.float64))
+                written += 1
                 if verbose:
-                    print(f"  Replaced paramId {code}")
+                    print(f"  Replaced code {code} level {level}")
             eccodes.codes_write(gid, f)
             eccodes.codes_release(gid)
+
+    if verbose:
+        print(f"  {written} messages updated in {output_file}")
 
 
 # ---------------------------------------------------------------------------
@@ -336,15 +439,20 @@ def create_paleo_masks(
 
     # Reduced ice sheet mask
     reduced_ice = np.zeros_like(paleo_lsm, dtype=bool)
+    modern_has_ice = np.zeros_like(paleo_lsm, dtype=bool)
     ice_file = paleo.get_reconstruction_file('ice_mask_file')
     if ice_file.exists():
         paleo_ice_data, ice_lons, ice_lats = _read_netcdf_field(ice_file)
         paleo_ice = _interp_to_gaussian(paleo_ice_data, ice_lons, ice_lats,
                                         tgt_lons, tgt_lats, method='nearest')
 
-        # Read modern ice (snow depth, code 141) from ICMGG
-        modern_ice, _, _ = _get_grib_field_by_code(config.get_icmgg_input_file(), 141)
-        if modern_ice is not None:
+        # Read modern ice (total column snow mass) from ICMGG
+        cycle = config.cycle
+        modern_ice = _read_total_snow_mass(config.get_icmgg_input_file(), cycle)
+        if modern_ice is None:
+            print(f"  Warning: snow mass (code {cycle.snow_mass_code}) not found "
+                  f"in input ICMGG, cannot derive reduced-ice mask")
+        else:
             # Modern ice > 0 but paleo ice absent → reduced ice sheet
             modern_has_ice = modern_ice > 0.0
             paleo_has_ice = paleo_ice >= 2.0  # value 2 = ice sheet in PlioMIP3
@@ -359,26 +467,53 @@ def create_paleo_masks(
         'added': added_land,
         'drowned': drowned,
         'reduced_ice': reduced_ice,
+        'modern_has_ice': modern_has_ice,
         'paleo_lsm': paleo_lsm,
         'core2_lsm': core2_lsm,
     }
     return masks
 
 
-def modify_ice_snow_depth(
+def modify_ice_snow(
     config: OCPConfig,
     grid: GaussianGrid,
     masks: Dict[str, np.ndarray],
-) -> np.ndarray:
+    icmgg_file: Path,
+) -> Dict[ReplacementKey, np.ndarray]:
     """
-    Modify snow depth (code 141) from reconstruction ice mask.
+    Impose the reconstruction ice sheets on the ICMGG snow fields.
 
-    PlioMIP3 convention: ice_mask value 1 → no ice (snow=0),
-    value 2 → ice sheet (snow depth = 10 m w.e.)
+    PlioMIP3 convention: ice_mask value 1 → no ice, value 2 → ice sheet
+    carrying ICE_SHEET_SNOW_MWE metres of water equivalent.
+
+    CY43R3 writes that into the single-layer snow depth (code 141, m w.e.),
+    reproducing ``mod_input_oifs.sh`` / ``change_ice.sh``
+    (``cdo -setvals,2,10 -setvals,1,0``).
+
+    CY48R1 has a five-layer snowpack in kg m-2, so the mass goes into the top
+    snow layer and the layers below are cleared wherever the ice is removed.
+    That mirrors how the ECMWF CY48R1 ICMGG templates themselves are built —
+    all snow mass sits in layer 1, layers 2-5 are inert — so no invented
+    layer-thickness profile is needed.
+
+    As in the original workflow, snow albedo, density and temperature at newly
+    glaciated points are not prescribed here: they are filled by
+    :func:`interpolate_remaining_fields`, which does the same
+    distance-weighted fill as ``cdo -setmisstodis,50``, now per snow layer.
+
+    Parameters
+    ----------
+    icmgg_file : the file being modified, read for its current snow layers
+
+    Returns
+    -------
+    dict of replacement key → values
     """
     paleo = config.paleo
+    cycle = config.cycle
 
-    print("\n  Modifying ice / snow depth (code 141)...")
+    print(f"\n  Modifying ice / snow (cycle {cycle.name}, "
+          f"code {cycle.snow_mass_code}, {cycle.snow_mass_units})...")
 
     tgt_lons = np.array(grid.lons_list)
     tgt_lats = grid.center_lats.flatten()
@@ -387,18 +522,48 @@ def modify_ice_snow_depth(
     ice_file = paleo.get_reconstruction_file('ice_mask_file')
     if not ice_file.exists():
         print(f"  Warning: ice mask not found: {ice_file}, skipping")
-        return None
+        return {}
 
     ice_data, ice_lons, ice_lats = _read_netcdf_field(ice_file)
     ice_on_gauss = _interp_to_gaussian(ice_data, ice_lons, ice_lats,
                                        tgt_lons, tgt_lats, method='nearest')
 
-    # Map: 1 → 0, 2 → 10
-    snow_depth = np.zeros(n_pts, dtype=np.float64)
-    snow_depth[np.isclose(ice_on_gauss, 2, atol=0.5)] = 10.0
+    is_ice = np.isclose(ice_on_gauss, 2, atol=0.5)
+    snow_mass = np.zeros(n_pts, dtype=np.float64)
+    snow_mass[is_ice] = cycle.ice_sheet_snow_mass
 
-    print(f"    Ice sheet points (snow=10): {np.sum(snow_depth > 0)}")
-    return snow_depth
+    print(f"    Ice sheet points: {np.sum(is_ice)} "
+          f"(snow mass {cycle.ice_sheet_snow_mass:g} {cycle.snow_mass_units})")
+
+    if not cycle.snow_multi_layer:
+        return {cycle.snow_mass_code: snow_mass}
+
+    fields = _read_all_grib_fields(icmgg_file)
+    levels = sorted({lev for code, lev in fields if code == cycle.snow_mass_code})
+    if not levels:
+        raise RuntimeError(
+            f"Cycle {cycle.name} expects a multi-layer snowpack but "
+            f"{icmgg_file} has no code {cycle.snow_mass_code} messages"
+        )
+    top, deeper = levels[0], levels[1:]
+    print(f"    Snow layers: {levels} (mass into layer {top})")
+
+    replacements: Dict[ReplacementKey, np.ndarray] = {(cycle.snow_mass_code, top): snow_mass}
+
+    # Deeper layers keep any real snowpack under points that stay glaciated,
+    # but must not retain mass where the ice sheet has gone.
+    for lev in deeper:
+        values = fields.get((cycle.snow_mass_code, lev))
+        if values is None:
+            continue
+        values = np.asarray(values, dtype=np.float64).copy()
+        if np.any(values[~is_ice] != 0.0):
+            values[~is_ice] = 0.0
+            replacements[(cycle.snow_mass_code, lev)] = values
+
+    print(f"    Newly glaciated points: {np.sum(is_ice & ~masks['modern_has_ice'])} "
+          f"(snow properties left to the distance-weighted fill)")
+    return replacements
 
 
 def modify_lakes(
@@ -594,7 +759,7 @@ def interpolate_remaining_fields(
     config: OCPConfig,
     grid: GaussianGrid,
     masks: Dict[str, np.ndarray],
-) -> Dict[int, np.ndarray]:
+) -> Dict[FieldKey, np.ndarray]:
     """
     Interpolate remaining GRIB fields for added/drowned grid points.
 
@@ -602,6 +767,10 @@ def interpolate_remaining_fields(
     - Drowned points: fill from surrounding ocean values
     - Added land + reduced ice sheet points: fill from surrounding land values
     - Combine both contributions
+
+    Equivalent to the ``cdo -setmisstodis,50`` loop in ``mod_input_oifs.sh``,
+    applied per (code, level) so that each layer of a multi-layer field — the
+    CY48R1 snowpack — is filled from its own profile.
     """
     verbose = config.options.verbose
     icmgg_file = config.get_icmgg_output_file()
@@ -627,14 +796,18 @@ def interpolate_remaining_fields(
     # Read all current fields from the (already LSM-adapted) ICMGG
     all_fields = _read_all_grib_fields(icmgg_file)
 
-    results = {}
-    for code in REMAINING_FIELD_CODES:
-        if code not in all_fields:
-            if verbose:
-                print(f"    Code {code} not found in ICMGG, skipping")
-            continue
+    # Fields on several levels (the CY48R1 snow block) are filled level by
+    # level, so each layer keeps its own profile.
+    wanted = set(REMAINING_FIELD_CODES)
+    keys = sorted(key for key in all_fields if key[0] in wanted)
+    missing = sorted(wanted - {code for code, _ in keys})
+    if missing and verbose:
+        print(f"    Codes not present in ICMGG, skipped: {missing}")
 
-        field = all_fields[code].copy()
+    results: Dict[FieldKey, np.ndarray] = {}
+    for key in keys:
+        code, level = key
+        field = all_fields[key].copy()
 
         # --- Ocean fill for drowned points ---
         if np.any(needs_ocean_fill):
@@ -650,9 +823,9 @@ def interpolate_remaining_fields(
                 filled_land = _distance_weighted_fill(field, land_known, tgt_lons, tgt_lats)
                 field[needs_land_fill] = filled_land[needs_land_fill]
 
-        results[code] = field
+        results[key] = field
         if verbose:
-            print(f"    Interpolated code {code}")
+            print(f"    Interpolated code {code} level {level}")
 
     print(f"    Processed {len(results)} remaining fields")
     return results
@@ -700,12 +873,10 @@ def modify_paleo_input(
     masks = create_paleo_masks(config, grid, lsm_data)
 
     # 2. Collect all field replacements
-    replacements: Dict[int, np.ndarray] = {}
+    replacements: Dict[ReplacementKey, np.ndarray] = {}
 
-    # 3. Ice / snow depth (code 141)
-    snow = modify_ice_snow_depth(config, grid, masks)
-    if snow is not None:
-        replacements[141] = snow
+    # 3. Ice / snow mass from the reconstruction ice mask
+    replacements.update(modify_ice_snow(config, grid, masks, icmgg_file))
 
     # 4. Lakes (code 26)
     existing_lake, _, _ = _get_grib_field_by_code(icmgg_file, 26)

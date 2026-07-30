@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 import yaml
 
+from .cycles import AUTO, CycleSpec, resolve_cycle
+
 
 @dataclass
 class AtmosphereConfig:
@@ -15,6 +17,9 @@ class AtmosphereConfig:
     resolution_list: List[int]
     truncation_type: str  # 'linear' or 'cubic-octahedral'
     experiment_name: str  # 4-digit ECMWF experiment code
+    # OpenIFS cycle of the ICMGG/ICMSH input files: '43r3', '48r1' or 'auto'.
+    # See ocp_tool/cycles.py — governs the snow-field layout.
+    model_cycle: str = AUTO
 
 
 @dataclass
@@ -118,10 +123,28 @@ class OCPConfig:
     def albedo_file(self) -> Path:
         return self.input_paths.openifs_default / 'bare_soil_albedos.grb'
     
+    @property
+    def cycle(self) -> CycleSpec:
+        """
+        OpenIFS cycle of the input files, resolved once and cached.
+
+        Either taken from ``atmosphere.model_cycle`` or auto-detected from the
+        input ICMGG file. An explicit setting that contradicts the file raises.
+        """
+        cached = getattr(self, '_cycle_spec', None)
+        if cached is None:
+            cached = resolve_cycle(
+                self.atmosphere.model_cycle,
+                self.get_icmgg_input_file(),
+                verbose=self.options.verbose,
+            )
+            self._cycle_spec = cached
+        return cached
+
     def get_icmgg_input_file(self) -> Path:
         """Get path to input ICMGG file."""
         return self.input_paths.openifs_default / f'ICMGG{self.atmosphere.experiment_name}INIT'
-    
+
     def get_icmgg_output_file(self) -> Path:
         """Get path to output ICMGG INIT file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIT_{self.ocean.grid_name}'
@@ -211,6 +234,7 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             resolution_list=raw['atmosphere']['resolution_list'],
             truncation_type=truncation_type,
             experiment_name=raw['atmosphere']['experiment_name'],
+            model_cycle=raw['atmosphere'].get('model_cycle', AUTO),
         ),
         ocean=OceanConfig(
             grid_name=raw['ocean']['grid_name'],

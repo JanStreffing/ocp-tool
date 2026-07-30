@@ -6,6 +6,7 @@ atmosphere:
   resolution_list: [95]
   truncation_type: "cubic-octahedral"
   experiment_name: "aack"  # 4-digit ECMWF experiment code
+  model_cycle: "43r3"  # "43r3", "48r1" or "auto"
 
 # Ocean grid settings
 ocean:
