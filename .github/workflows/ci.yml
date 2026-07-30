@@ -37,6 +37,13 @@ jobs:
           print('✓ Successfully imported all ocp_tool modules')
           "
 
+      - name: Run test suite
+        run: |
+          pixi run -e dev pytest
+        # Tests that need real OpenIFS ICMGG files skip when those are not
+        # reachable, so only the cycle/field logic runs here. Point
+        # OCP_TEST_ICMGG_48R1 / OCP_TEST_ICMGG_43R3 at real files to run them.
+
   code-quality:
     name: Code Quality Checks
     runs-on: ubuntu-latest
