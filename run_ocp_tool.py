@@ -26,7 +26,9 @@ from ocp_tool.plotting import plot_land_sea_mask, plot_runoff_maps
 from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
 from ocp_tool.field_interpolation import interpolate_2d_fields_to_icmgg
 from ocp_tool.create_outputdirs import create_outputdirs
-from ocp_tool.paleo_input import modify_paleo_input, create_paleo_masks, read_paleo_lsm
+from ocp_tool.paleo_input import (
+    modify_paleo_input, create_paleo_masks, read_paleo_lsm, modify_paleo_icmcl,
+)
 from ocp_tool.paleo_topo import modify_topography
 from ocp_tool.paleo_subgrid_oro import modify_paleo_subgrid_orography
 
@@ -184,6 +186,10 @@ def run_ocp_tool(config: OCPConfig) -> None:
             masks = create_paleo_masks(config, grid, lsm_data)
             modify_topography(config, grid, masks)
             
+            # Step 14b: Modify ICMCL monthly climatologies
+            print("\nStep 14b: Paleo climatology modification (ICMCL)...")
+            modify_paleo_icmcl(config, grid, masks)
+
             # Step 15: Subgrid-scale orography via calnoro
             if config.paleo.calnoro_binary:
                 print("\nStep 15: Paleo subgrid-scale orography (calnoro)...")

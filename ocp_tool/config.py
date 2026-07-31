@@ -158,6 +158,15 @@ class OCPConfig:
         """Get path to output ICMGG INIUA file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIUA'
     
+    def get_icmcl_input_file(self) -> Path:
+        """Get path to input ICMCL file (monthly climatologies)."""
+        return self.input_paths.openifs_default / f'ICMCL{self.atmosphere.experiment_name}INIT'
+
+    def get_icmcl_output_file(self) -> Path:
+        """Get path to output ICMCL file."""
+        suffix = f'_{self.paleo.experiment_id}' if self.paleo else f'_{self.ocean.grid_name}'
+        return self.output_paths.openifs_modified / f'ICMCL{self.atmosphere.experiment_name}INIT{suffix}'
+
     def get_icmsh_input_file(self) -> Path:
         """Get path to input ICMSH file (spectral topography)."""
         if self.paleo and self.paleo.icmsh_input_file:

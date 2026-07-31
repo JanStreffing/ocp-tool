@@ -238,6 +238,89 @@ def _distance_weighted_fill(
     return result
 
 
+def _fill_added_drowned(
+    field: np.ndarray,
+    masks: Dict[str, np.ndarray],
+    tgt_lons: np.ndarray,
+    tgt_lats: np.ndarray,
+) -> np.ndarray:
+    """
+    Distance-weighted fill of added, drowned and reduced-ice points.
+
+    Drowned points are filled from surrounding ocean, added and reduced-ice
+    points from surrounding land, as ``cdo -setmisstodis,50`` did.
+    """
+    field = np.asarray(field, dtype=np.float64).copy()
+    drowned = masks['drowned']
+    needs_land_fill = masks['added'] | masks['reduced_ice']
+
+    if np.any(drowned):
+        ocean_known = masks['ocean'] & ~drowned
+        if np.any(ocean_known):
+            filled = _distance_weighted_fill(field, ocean_known, tgt_lons, tgt_lats)
+            field[drowned] = filled[drowned]
+
+    if np.any(needs_land_fill):
+        land_known = masks['land'] & ~masks['added'] & ~masks['reduced_ice']
+        if np.any(land_known):
+            filled = _distance_weighted_fill(field, land_known, tgt_lons, tgt_lats)
+            field[needs_land_fill] = filled[needs_land_fill]
+
+    return field
+
+
+def modify_paleo_icmcl(
+    config: OCPConfig,
+    grid: GaussianGrid,
+    masks: Dict[str, np.ndarray],
+) -> Optional[Path]:
+    """
+    Apply the paleo masks to the monthly ICMCL climatologies.
+
+    The ICMCL carries albedo and LAI for each month. Under a changed land-sea
+    mask its land values sit over new ocean and its ocean values over new land,
+    so every message gets the same fill as the ICMGG surface fields.
+
+    Note this only relocates the modern climatology; it does not rebuild LAI
+    from the reconstruction biomes.
+    """
+    icmcl_in = config.get_icmcl_input_file()
+    if not icmcl_in.exists():
+        print(f"  Warning: ICMCL not found: {icmcl_in}, skipping")
+        return None
+
+    icmcl_out = config.get_icmcl_output_file()
+    tgt_lons = np.array(grid.lons_list)
+    tgt_lats = grid.center_lats.flatten()
+    verbose = config.options.verbose
+
+    print(f"  Reading ICMCL: {icmcl_in}")
+    n = 0
+    with open(icmcl_in, 'rb') as fin, open(icmcl_out, 'wb') as fout:
+        while True:
+            gid = eccodes.codes_grib_new_from_file(fin)
+            if gid is None:
+                break
+            try:
+                code, _ = _message_key(gid)
+                values = eccodes.codes_get_array(gid, 'values')
+                if values.size == tgt_lons.size:
+                    eccodes.codes_set_array(
+                        gid, 'values',
+                        _fill_added_drowned(values, masks, tgt_lons, tgt_lats),
+                    )
+                    n += 1
+                    if verbose:
+                        date = eccodes.codes_get(gid, 'dataDate')
+                        print(f"    Filled code {code} {date}")
+                eccodes.codes_write(gid, fout)
+            finally:
+                eccodes.codes_release(gid)
+
+    print(f"  ICMCL modification complete ({n} messages): {icmcl_out}")
+    return icmcl_out
+
+
 def read_paleo_lsm(
     config: OCPConfig,
     grid: GaussianGrid,
@@ -847,22 +930,7 @@ def interpolate_remaining_fields(
     results: Dict[FieldKey, np.ndarray] = {}
     for key in keys:
         code, level = key
-        field = all_fields[key].copy()
-
-        # --- Ocean fill for drowned points ---
-        if np.any(needs_ocean_fill):
-            ocean_known = ocean_mask & ~drowned
-            if np.any(ocean_known):
-                filled_ocean = _distance_weighted_fill(field, ocean_known, tgt_lons, tgt_lats)
-                field[needs_ocean_fill] = filled_ocean[needs_ocean_fill]
-
-        # --- Land fill for added / reduced-ice points ---
-        if np.any(needs_land_fill):
-            land_known = land_mask & ~added & ~reduced_ice
-            if np.any(land_known):
-                filled_land = _distance_weighted_fill(field, land_known, tgt_lons, tgt_lats)
-                field[needs_land_fill] = filled_land[needs_land_fill]
-
+        field = _fill_added_drowned(all_fields[key], masks, tgt_lons, tgt_lats)
         results[key] = field
         if verbose:
             print(f"    Interpolated code {code} level {level}")
