@@ -27,6 +27,9 @@ from .paleo_input import (
     _distance_weighted_fill,
 )
 
+# GRIB code of the spectral orography (geopotential at the surface)
+Z_PARAM_ID = 129
+
 
 # ── CDO helpers for spectral ↔ gridpoint ────────────────────────
 
@@ -54,24 +57,54 @@ def _extract_z_grib(icmsh_file: Path, output_file: str) -> None:
 
 
 def _replace_z_in_icmsh(icmsh_input: Path, z_spectral_grib: str, icmsh_output: Path) -> None:
-    """Replace the 'z' field in ICMSH with a new spectral GRIB message."""
-    import subprocess
-    with tempfile.NamedTemporaryFile(suffix='.grib', delete=False) as tmp:
-        filtered = tmp.name
-    try:
-        # Copy everything except 'z'
-        subprocess.run(
-            ['grib_copy', '-w', 'shortName!=z', str(icmsh_input), filtered],
-            check=True,
+    """
+    Write the modified orography back into ICMSH, reusing the original message.
+
+    CDO's gp2spl emits a fresh GRIB2 message carrying no parameter identity —
+    ecCodes reports paramId 0. Merging that in place of the original leaves the
+    file without code 129, and OpenIFS aborts at the very first read of CNT3::
+
+        SPECTRAL 2D FIELD MISSING:  129
+        ABOR1 : IOSTREAM_MIX:SPEC_IN - MISSING FIELD
+
+    Copying only the spectral coefficients into the original message keeps its
+    edition, paramId, truncation and packing, so the file stays readable.
+    """
+    with open(z_spectral_grib, 'rb') as f:
+        gid = eccodes.codes_grib_new_from_file(f)
+        if gid is None:
+            raise RuntimeError(f"No GRIB message in {z_spectral_grib}")
+        try:
+            new_values = eccodes.codes_get_array(gid, 'values')
+        finally:
+            eccodes.codes_release(gid)
+
+    replaced = 0
+    with open(icmsh_input, 'rb') as fin, open(icmsh_output, 'wb') as fout:
+        while True:
+            gid = eccodes.codes_grib_new_from_file(fin)
+            if gid is None:
+                break
+            try:
+                if int(eccodes.codes_get(gid, 'paramId')) == Z_PARAM_ID:
+                    n_orig = int(eccodes.codes_get(gid, 'numberOfValues'))
+                    if n_orig != new_values.size:
+                        raise RuntimeError(
+                            f"Spectral truncation mismatch writing orography: "
+                            f"original message holds {n_orig} coefficients, "
+                            f"gp2spl produced {new_values.size}"
+                        )
+                    eccodes.codes_set_array(gid, 'values', new_values)
+                    replaced += 1
+                eccodes.codes_write(gid, fout)
+            finally:
+                eccodes.codes_release(gid)
+
+    if replaced != 1:
+        raise RuntimeError(
+            f"Expected exactly one orography message (paramId {Z_PARAM_ID}) in "
+            f"{icmsh_input}, found {replaced}"
         )
-        # Merge: filtered (all except z) + new z → output
-        subprocess.run(
-            ['grib_copy', filtered, z_spectral_grib, str(icmsh_output)],
-            check=True,
-        )
-    finally:
-        if os.path.exists(filtered):
-            os.remove(filtered)
 
 
 # ── Topography reading helpers ──────────────────────────────────
