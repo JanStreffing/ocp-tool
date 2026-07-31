@@ -26,6 +26,11 @@ from ocp_tool.plotting import plot_land_sea_mask, plot_runoff_maps
 from ocp_tool.co2_interpolation import interpolate_co2_to_icmgg
 from ocp_tool.field_interpolation import interpolate_2d_fields_to_icmgg
 from ocp_tool.create_outputdirs import create_outputdirs
+from ocp_tool.paleo_input import (
+    modify_paleo_input, create_paleo_masks, read_paleo_lsm, modify_paleo_icmcl,
+)
+from ocp_tool.paleo_topo import modify_topography
+from ocp_tool.paleo_subgrid_oro import modify_paleo_subgrid_orography
 
 
 def run_ocp_tool(config: OCPConfig) -> None:
@@ -43,7 +48,8 @@ def run_ocp_tool(config: OCPConfig) -> None:
     print(f"  Ocean grid: {config.ocean.grid_name}")
     print(f"  Ice cavities: {config.ocean.has_ice_cavities}")
     print(f"  Experiment: {config.atmosphere.experiment_name}")
-    
+    if config.paleo and config.paleo.enabled:
+        print(f"  Paleo mode: ENABLED (experiment {config.paleo.experiment_id})")
     
     # Process each resolution
     for resolution in config.atmosphere.resolution_list:
@@ -66,7 +72,11 @@ def run_ocp_tool(config: OCPConfig) -> None:
             ocean_lsm = read_fesom_grid_polygon(config, grid, verbose=config.options.verbose)
         else:
             print("\nStep 2: Skipped reading FESOM mesh (AMIP mode)")
-            ocean_lsm = []
+            # No ocean mesh, so a paleo run takes its geography from the
+            # reconstruction land-sea mask instead.
+            ocean_lsm = read_paleo_lsm(config, grid, verbose=config.options.verbose)
+            if ocean_lsm is None:
+                ocean_lsm = []
         
         # Step 3: Process land-sea mask
         print("\nStep 3: Processing land-sea mask...")
@@ -164,6 +174,28 @@ def run_ocp_tool(config: OCPConfig) -> None:
         # Step 12: Create SLT output for LPJ-GUESS
         print("\nStep 12: Creating SLT output for LPJ-GUESS...")
         create_slt_output_for_lpjg(config, resolution)
+        
+        # ---- Paleo modification steps (conditional) ----
+        if config.paleo and config.paleo.enabled:
+            # Step 13: Modify ICMGG land surface variables from reconstructions
+            print("\nStep 13: Paleo land surface modifications (ICMGG)...")
+            modify_paleo_input(config, grid, lsm_data)
+            
+            # Step 14: Modify ICMSH topography
+            print("\nStep 14: Paleo topography modification (ICMSH)...")
+            masks = create_paleo_masks(config, grid, lsm_data)
+            modify_topography(config, grid, masks)
+            
+            # Step 14b: Modify ICMCL monthly climatologies
+            print("\nStep 14b: Paleo climatology modification (ICMCL)...")
+            modify_paleo_icmcl(config, grid, masks)
+
+            # Step 15: Subgrid-scale orography via calnoro
+            if config.paleo.calnoro_binary:
+                print("\nStep 15: Paleo subgrid-scale orography (calnoro)...")
+                modify_paleo_subgrid_orography(config, grid, masks)
+            else:
+                print("\nStep 15: Skipped calnoro (no binary configured)")
     
     print("\n" + "=" * 60)
     print(" OCP-Tool processing complete!")

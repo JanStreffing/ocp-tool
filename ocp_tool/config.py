@@ -5,8 +5,10 @@ Handles loading YAML config and provides typed configuration dataclasses.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 import yaml
+
+from .cycles import AUTO, CycleSpec, resolve_cycle
 
 
 @dataclass
@@ -15,6 +17,9 @@ class AtmosphereConfig:
     resolution_list: List[int]
     truncation_type: str  # 'linear' or 'cubic-octahedral'
     experiment_name: str  # 4-digit ECMWF experiment code
+    # OpenIFS cycle of the ICMGG/ICMSH input files: '43r3', '48r1' or 'auto'.
+    # See ocp_tool/cycles.py — governs the snow-field layout.
+    model_cycle: str = AUTO
 
 
 @dataclass
@@ -55,6 +60,38 @@ class OutputPaths:
 
 
 @dataclass
+class PaleoConfig:
+    """Paleo reconstruction configuration."""
+    enabled: bool
+    experiment_id: str  # e.g. "EP", "LP" — used in filenames
+    reconstruction_dir: Path  # directory containing reconstruction NetCDF files
+    modern_reference_dir: Path  # directory containing modern reference files
+    icmsh_input_file: Path  # path to ICMSHaackINIT_CORE2 (spectral topo)
+    calnoro_binary: Optional[Path]  # path to compiled calnoro binary
+    # Reconstruction file names (relative to reconstruction_dir)
+    ice_mask_file: str = "{exp_id}_icemask_v1.0.nc"
+    topography_file: str = "{exp_id}_topo_v1.0.nc"
+    lsm_file: str = "{exp_id}_LSM_v1.0.nc"
+    lake_file: str = "{exp_id}_lake_v1.0.nc"
+    soil_file: str = "{exp_id}_soil_v1.0.nc"
+    biome_file: str = "{exp_id}_mbiome_v1.0.nc"
+    # Modern reference file names (relative to modern_reference_dir)
+    modern_topo_file: str = "Modern_std_topo_v1.0.nc"
+    modern_lake_file: str = "Modern_std_soil_lake_v1.0.nc"
+
+    def get_reconstruction_file(self, file_attr: str) -> Path:
+        """Get full path to a reconstruction file, substituting experiment_id."""
+        template = getattr(self, file_attr)
+        filename = template.format(exp_id=self.experiment_id)
+        return self.reconstruction_dir / filename
+
+    def get_modern_file(self, file_attr: str) -> Path:
+        """Get full path to a modern reference file."""
+        filename = getattr(self, file_attr)
+        return self.modern_reference_dir / filename
+
+
+@dataclass
 class ProcessingOptions:
     """Processing options."""
     verbose: bool
@@ -73,6 +110,7 @@ class OCPConfig:
     output_paths: OutputPaths
     options: ProcessingOptions
     root_dir: Path
+    paleo: Optional[PaleoConfig] = None
     
     @property
     def co2_grib_file(self) -> Path:
@@ -86,10 +124,28 @@ class OCPConfig:
     def albedo_file(self) -> Path:
         return self.input_paths.openifs_default / 'bare_soil_albedos.grb'
     
+    @property
+    def cycle(self) -> CycleSpec:
+        """
+        OpenIFS cycle of the input files, resolved once and cached.
+
+        Either taken from ``atmosphere.model_cycle`` or auto-detected from the
+        input ICMGG file. An explicit setting that contradicts the file raises.
+        """
+        cached = getattr(self, '_cycle_spec', None)
+        if cached is None:
+            cached = resolve_cycle(
+                self.atmosphere.model_cycle,
+                self.get_icmgg_input_file(),
+                verbose=self.options.verbose,
+            )
+            self._cycle_spec = cached
+        return cached
+
     def get_icmgg_input_file(self) -> Path:
         """Get path to input ICMGG file."""
         return self.input_paths.openifs_default / f'ICMGG{self.atmosphere.experiment_name}INIT'
-    
+
     def get_icmgg_output_file(self) -> Path:
         """Get path to output ICMGG INIT file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIT_{self.ocean.grid_name}'
@@ -101,6 +157,26 @@ class OCPConfig:
     def get_icmgg_iniua_file(self) -> Path:
         """Get path to output ICMGG INIUA file."""
         return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIUA'
+    
+    def get_icmcl_input_file(self) -> Path:
+        """Get path to input ICMCL file (monthly climatologies)."""
+        return self.input_paths.openifs_default / f'ICMCL{self.atmosphere.experiment_name}INIT'
+
+    def get_icmcl_output_file(self) -> Path:
+        """Get path to output ICMCL file."""
+        suffix = f'_{self.paleo.experiment_id}' if self.paleo else f'_{self.ocean.grid_name}'
+        return self.output_paths.openifs_modified / f'ICMCL{self.atmosphere.experiment_name}INIT{suffix}'
+
+    def get_icmsh_input_file(self) -> Path:
+        """Get path to input ICMSH file (spectral topography)."""
+        if self.paleo and self.paleo.icmsh_input_file:
+            return self.paleo.icmsh_input_file
+        return self.input_paths.openifs_default / f'ICMSH{self.atmosphere.experiment_name}INIT'
+    
+    def get_icmsh_output_file(self) -> Path:
+        """Get path to output ICMSH file."""
+        suffix = f'_{self.paleo.experiment_id}' if self.paleo else f'_{self.ocean.grid_name}'
+        return self.output_paths.openifs_modified / f'ICMSH{self.atmosphere.experiment_name}INIT{suffix}'
 
 
 def load_config(config_path: Union[str, Path]) -> OCPConfig:
@@ -172,6 +248,7 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             resolution_list=raw['atmosphere']['resolution_list'],
             truncation_type=truncation_type,
             experiment_name=raw['atmosphere']['experiment_name'],
+            model_cycle=raw['atmosphere'].get('model_cycle', AUTO),
         ),
         ocean=OceanConfig(
             grid_name=raw['ocean']['grid_name'],
@@ -192,6 +269,30 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             generate_rmp=raw['options'].get('generate_rmp', True),
         ),
         root_dir=root_dir,
+        paleo=_load_paleo_config(raw, resolve_path) if 'paleo' in raw else None,
+    )
+
+
+def _load_paleo_config(raw: dict, resolve_path) -> Optional[PaleoConfig]:
+    """Parse paleo section from raw YAML config."""
+    paleo_raw = raw.get('paleo', {})
+    if not paleo_raw.get('enabled', False):
+        return None
+    return PaleoConfig(
+        enabled=True,
+        experiment_id=paleo_raw['experiment_id'],
+        reconstruction_dir=resolve_path(paleo_raw['reconstruction_dir']),
+        modern_reference_dir=resolve_path(paleo_raw['modern_reference_dir']),
+        icmsh_input_file=resolve_path(paleo_raw['icmsh_input_file']),
+        calnoro_binary=resolve_path(paleo_raw['calnoro_binary']) if paleo_raw.get('calnoro_binary') else None,
+        ice_mask_file=paleo_raw.get('ice_mask_file', '{exp_id}_icemask_v1.0.nc'),
+        topography_file=paleo_raw.get('topography_file', '{exp_id}_topo_v1.0.nc'),
+        lsm_file=paleo_raw.get('lsm_file', '{exp_id}_LSM_v1.0.nc'),
+        lake_file=paleo_raw.get('lake_file', '{exp_id}_lake_v1.0.nc'),
+        soil_file=paleo_raw.get('soil_file', '{exp_id}_soil_v1.0.nc'),
+        biome_file=paleo_raw.get('biome_file', '{exp_id}_mbiome_v1.0.nc'),
+        modern_topo_file=paleo_raw.get('modern_topo_file', 'Modern_std_topo_v1.0.nc'),
+        modern_lake_file=paleo_raw.get('modern_lake_file', 'Modern_std_soil_lake_v1.0.nc'),
     )
 
 

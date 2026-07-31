@@ -33,6 +33,7 @@ jobs:
           # Runtime deps needed to import the ocp_tool modules (no conda/pixi).
           # pyfesom2 is not imported at module top level, so it is not required here.
           pip install numpy scipy netcdf4 xarray matplotlib cartopy pandas pyyaml eccodes
+          pip install pytest pytest-cov
 
       - name: Check Python scripts syntax
         run: |
@@ -51,6 +52,13 @@ jobs:
           from ocp_tool.plotting import plot_land_sea_mask
           print('✓ Successfully imported all ocp_tool modules')
           "
+
+      - name: Run test suite
+        run: |
+          pytest
+        # Tests that need real OpenIFS ICMGG files skip when those are not
+        # reachable, so only the cycle/field logic runs here. Point
+        # OCP_TEST_ICMGG_48R1 / OCP_TEST_ICMGG_43R3 at real files to run them.
 
   code-quality:
     name: Code Quality Checks

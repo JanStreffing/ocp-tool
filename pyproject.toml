@@ -168,6 +168,9 @@ known_first_party = ["ocp_tool"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Import ocp_tool from the checkout without installing it. `python -m pytest`
+# gets this from the working directory, a bare `pytest` does not.
+pythonpath = ["."]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
