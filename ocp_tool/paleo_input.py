@@ -181,17 +181,28 @@ def _interp_to_gaussian(
     method : 'nearest', 'linear', or 'cubic'
     fill_value : value for points outside convex hull (linear/cubic only)
     """
-    src_pts = np.column_stack([src_lons.ravel(), src_lats.ravel()])
+    src_lon = np.mod(src_lons.ravel(), 360.0)
+    src_lat = src_lats.ravel()
     src_vals = src_data.ravel()
 
     # Remove NaN / masked values
     valid = np.isfinite(src_vals)
     if hasattr(src_vals, 'mask'):
         valid &= ~src_vals.mask
-    src_pts = src_pts[valid]
+    src_lon = src_lon[valid]
+    src_lat = src_lat[valid]
     src_vals = src_vals[valid]
 
-    tgt_pts = np.column_stack([tgt_lons, tgt_lats])
+    # The reconstructions are on -180..180 while the GRIB target is 0..360, so
+    # both are wrapped to 0..360 and the source is repeated either side of the
+    # seam. Without this, everything east of the date line is nearest-matched
+    # to the edge of the source grid and a whole hemisphere is smeared.
+    src_lon = np.concatenate([src_lon - 360.0, src_lon, src_lon + 360.0])
+    src_lat = np.tile(src_lat, 3)
+    src_vals = np.tile(src_vals, 3)
+
+    src_pts = np.column_stack([src_lon, src_lat])
+    tgt_pts = np.column_stack([np.mod(tgt_lons, 360.0), tgt_lats])
 
     return griddata(src_pts, src_vals, tgt_pts, method=method, fill_value=fill_value)
 
@@ -225,6 +236,41 @@ def _distance_weighted_fill(
     query_pts = np.column_stack([lons[missing], lats[missing]])
     result[missing] = interp(query_pts)
     return result
+
+
+def read_paleo_lsm(
+    config: OCPConfig,
+    grid: GaussianGrid,
+    verbose: bool = False,
+) -> Optional[np.ndarray]:
+    """
+    Reconstruction land-sea mask on the Gaussian grid, 1 = land, 0 = ocean.
+
+    Fed to modify_lsm in place of an ocean mask, so flipped cells get the same
+    nearest-neighbour column rebuild. Returns None when paleo is disabled or
+    the file is absent.
+    """
+    paleo = config.paleo
+    if paleo is None or not paleo.enabled:
+        return None
+
+    lsm_file = paleo.get_reconstruction_file('lsm_file')
+    if not lsm_file.exists():
+        print(f"  Warning: paleo LSM not found: {lsm_file}, keeping the modern mask")
+        return None
+
+    print(f"  Reading paleo land-sea mask: {lsm_file}")
+    data, lons, lats = _read_netcdf_field(lsm_file)
+    tgt_lons = np.array(grid.lons_list)
+    tgt_lats = grid.center_lats.flatten()
+    on_gauss = _interp_to_gaussian(data, lons, lats, tgt_lons, tgt_lats, method='nearest')
+
+    # Some releases carry missing values over ocean; treat those as ocean.
+    on_gauss = np.where(np.isfinite(on_gauss), on_gauss, 0.0)
+    binary = (on_gauss >= 0.5).astype(np.float64)
+    if verbose:
+        print(f"    Paleo mask: {int(binary.sum())} land of {binary.size} points")
+    return binary
 
 
 def _read_total_snow_mass(grib_file: Path, cycle: CycleSpec) -> Optional[np.ndarray]:

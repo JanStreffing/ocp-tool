@@ -216,7 +216,9 @@ def modify_lsm(
     lsm_binary_runoff = lsm_binary_land.copy()
     gribfield_mod = gribfield[:]
     
-    if ocean_grid_name != 'AMIP':
+    # ocean_lsm is the ocean model grid when coupled, the reconstruction mask
+    # for a paleo AMIP run, and empty otherwise.
+    if len(ocean_lsm):
         # Automatic lake removal based on ocean mask
         # Polygon method: ocean_lsm = 1 means land, 0 means ocean
         n_points = len(gribfield_mod[slt_id])
