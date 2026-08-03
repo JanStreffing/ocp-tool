@@ -150,6 +150,34 @@ def awiesm3_feom_links(atm_grid: str = "A096", method: str = "existing") -> List
     ]
 
 
+def awiesm3_ismp_links(atm_grid: str = "A096", ice_grid: str = "ismp",
+                       method: str = "bilinear") -> List[Link]:
+    """Links for a PISM ice sheet coupled through the ISM-mapper.
+
+    Two links cover the whole field set, because a link is one (source, target,
+    map) and not one per field: everything OIFS sends the ISM-mapper
+    (A_Evap_ISM, A_SST_ISM, A_Soil4T_ISM, and the shared precip/runoff fields)
+    is atm -> ice, and plit is ice -> atm.
+
+    ``method`` picks the ice -> atm map. "bilinear" reproduces EC-Earth.
+    "conserv" is likely the better choice for plit: it is a 0/1 mask on a 8 km
+    grid going to ~100 km cells, and what suorog thresholds against
+    ECE_LANDICE_THRESH is an area fraction, which conservative gives directly
+    and a centre-based interpolation does not. Needs corners on both grids.
+    """
+    if method not in ("bilinear", "conserv"):
+        raise ValueError(f"unknown method profile: {method}")
+    bilinear = "BILINEAR D SCALAR LATITUDE 15"
+    conserv = "CONSERV LR SCALAR LATITUDE 1 25 0.1"
+
+    return [
+        # atm -> ice: forcing. Coarse to fine, so a centre-based map is right.
+        Link(atm_grid, ice_grid, bilinear),
+        # ice -> atm: plit.
+        Link(ice_grid, atm_grid, conserv if method == "conserv" else bilinear),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Grid geometry read back from the OASIS description files
 # ---------------------------------------------------------------------------
