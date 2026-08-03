@@ -30,6 +30,8 @@ class OceanConfig:
     mesh_file: Optional[Path]
     intermediate_resolution: str = "r360x181"
     force_overwrite_griddes: bool = False
+    # FESOM writes feom itself at runtime, in dist order; ours is mesh order.
+    write_oasis_grid: bool = False
 
 
 @dataclass
@@ -101,6 +103,20 @@ class ProcessingOptions:
 
 
 @dataclass
+class IceRegionConfig:
+    """One ice-sheet domain coupled through OASIS."""
+    name: str          # 4-character OASIS grid name, e.g. 'ismp'
+    grid_file: Path    # PISM file with x/y/lat/lon/mapping
+
+
+@dataclass
+class IceConfig:
+    """Ice-sheet coupling. Off unless ice.enabled is true."""
+    enabled: bool
+    regions: List[IceRegionConfig]
+
+
+@dataclass
 class OCPConfig:
     """Main configuration container."""
     atmosphere: AtmosphereConfig
@@ -111,6 +127,7 @@ class OCPConfig:
     options: ProcessingOptions
     root_dir: Path
     paleo: Optional[PaleoConfig] = None
+    ice: Optional[IceConfig] = None
     
     @property
     def co2_grib_file(self) -> Path:
@@ -256,6 +273,7 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             mesh_file=Path(raw['ocean']['mesh_file']) if raw['ocean']['mesh_file'] is not None else None,
             intermediate_resolution=raw['ocean'].get('intermediate_resolution', 'r360x181'),
             force_overwrite_griddes=raw['ocean'].get('force_overwrite_griddes', False),
+            write_oasis_grid=raw['ocean'].get('write_oasis_grid', False),
         ),
         runoff=RunoffConfig(
             manual_basin_removal=raw['runoff']['manual_basin_removal'],
@@ -270,7 +288,30 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
         ),
         root_dir=root_dir,
         paleo=_load_paleo_config(raw, resolve_path) if 'paleo' in raw else None,
+        ice=_load_ice_config(raw, resolve_path) if 'ice' in raw else None,
     )
+
+
+def _load_ice_config(raw: dict, resolve_path) -> Optional[IceConfig]:
+    """Parse the ice section from raw YAML config. Off by default."""
+    ice_raw = raw.get('ice', {})
+    if not ice_raw.get('enabled', False):
+        return None
+
+    regions = []
+    for region in ice_raw.get('regions', []):
+        name = region['name']
+        if len(name) != 4:
+            raise ValueError(
+                f"ice.regions: OASIS grid name must be 4 characters, got {name!r}"
+            )
+        regions.append(IceRegionConfig(
+            name=name,
+            grid_file=resolve_path(region['grid_file']),
+        ))
+    if not regions:
+        raise ValueError("ice.enabled is true but no ice.regions were given")
+    return IceConfig(enabled=True, regions=regions)
 
 
 def _load_paleo_config(raw: dict, resolve_path) -> Optional[PaleoConfig]:
