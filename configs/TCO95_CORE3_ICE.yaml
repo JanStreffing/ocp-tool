@@ -23,6 +23,7 @@ ice:
   enabled: true
   regions:
     - name: "ismp"
+      prefix: "antar"
       grid_file: "/work/ab0246/a270092/input/pism/antarct_cr/antarct_cr.initial_08km.nc"
 
 # Basin modifications for runoff

@@ -107,6 +107,7 @@ class IceRegionConfig:
     """One ice-sheet domain coupled through OASIS."""
     name: str          # 4-character OASIS grid name, e.g. 'ismp'
     grid_file: Path    # PISM file with x/y/lat/lon/mapping
+    prefix: str = ""   # ISM-mapper region prefix for field names, e.g. 'antar'
 
 
 @dataclass
@@ -308,6 +309,7 @@ def _load_ice_config(raw: dict, resolve_path) -> Optional[IceConfig]:
         regions.append(IceRegionConfig(
             name=name,
             grid_file=resolve_path(region['grid_file']),
+            prefix=region.get('prefix', name),
         ))
     if not regions:
         raise ValueError("ice.enabled is true but no ice.regions were given")

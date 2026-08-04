@@ -83,6 +83,7 @@ def write_oasis_grid_files(
     # Add ice-sheet grids, off unless ice.enabled is set in the config
     if config.ice is not None:
         _append_pism_grid_to_oasis_files(config, file_types)
+        _write_ismm_restart(config)
 
 
 def _write_single_oasis_file(
@@ -253,6 +254,57 @@ def _append_fesom_grid_to_oasis_files(config: OCPConfig) -> None:
         print(f"Warning: Failed to add FESOM grid to OASIS files: {e}")
         import traceback
         traceback.print_exc()
+
+
+def _write_ismm_restart(config: OCPConfig, restart_name: str = "rstism.nc") -> None:
+    """Seed the ISM-mapper OASIS restart with the ice mask.
+
+    OASIS restarts hold the SOURCE field on the SOURCE grid and remap at read
+    time, so only <prefix>_plit is needed here; the atmosphere fluxes are safely
+    zero-filled by NNOREST. A mask is not: with LAG the receiver takes its first
+    value from this file, and an empty mask strips the glacier tiles from the
+    atmosphere for one coupling interval.
+    """
+    out = config.output_paths.oasis / restart_name
+    print(f' Writing ISM-mapper restart {out}')
+
+    wrote = []
+    for region in config.ice.regions:
+        try:
+            with Dataset(str(region.grid_file)) as src:
+                if "thk" not in src.variables:
+                    print(f'Warning: no thk in {region.grid_file}, skipping {region.name}')
+                    continue
+                thk = np.array(src.variables["thk"][:])
+        except Exception as e:
+            print(f'Warning: could not read {region.grid_file}: {e}')
+            continue
+
+        if thk.ndim == 3:
+            thk = thk[-1]
+        mask = np.where(thk > 0.0, 1.0, 0.0)
+
+        ny, nx = mask.shape
+        vn = f"{region.prefix}_plit"
+        mode = "a" if out.exists() else "w"
+        nc = Dataset(str(out), mode, format="NETCDF3_CLASSIC")
+        try:
+            yname, xname = f"ny_{region.name}", f"nx_{region.name}"
+            if yname not in nc.dimensions:
+                nc.createDimension(yname, ny)
+            if xname not in nc.dimensions:
+                nc.createDimension(xname, nx)
+            if vn not in nc.variables:
+                v = nc.createVariable(vn, "f8", (yname, xname))
+                v.units = "1"
+                v.long_name = "ice sheet mask, 1 = ice"
+                v[:] = mask
+                wrote.append(f"{vn} ({nx}x{ny}, {int(mask.sum())} ice cells)")
+        finally:
+            nc.close()
+
+    print(f"  {', '.join(wrote) if wrote else '(nothing written)'}")
+    print(f"\n {'='*50} \n")
 
 
 def _append_pism_grid_to_oasis_files(config: OCPConfig, file_types: list) -> None:
