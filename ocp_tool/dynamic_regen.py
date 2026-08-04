@@ -38,12 +38,15 @@ from pathlib import Path
 import yaml
 
 
-def _build_config(template, mesh_dir, grid_name, ocp_tool_dir, generate_rmp):
+def _build_config(template, mesh_dir, grid_name, ocp_tool_dir, generate_rmp,
+                  write_oasis_grid=None):
     """Return a config dict derived from ``template`` for the submesh."""
     raw = yaml.safe_load(Path(template).read_text())
 
     ocean = raw.setdefault("ocean", {})
     ocean["grid_name"] = grid_name
+    if write_oasis_grid is not None:
+        ocean["write_oasis_grid"] = bool(write_oasis_grid)
     # read_fesom_grid_polygon builds mesh.nc from the ASCII files in the parent
     # of mesh_file when it is missing / force_overwrite_griddes is set, so point
     # mesh_file inside the submesh dir and force a rebuild for the new node set.
@@ -65,8 +68,13 @@ def regenerate_for_submesh(
     ocp_tool_dir=None,
     python_exe=None,
     generate_rmp=True,
+    write_oasis_grid=None,
 ):
     """Run the full ocp-tool pipeline for ``mesh_dir`` and stage its products.
+
+    ``write_oasis_grid`` overrides the template. A caller that goes on to build
+    remapping weights has to set it, because the weights are built against the
+    ocean grid in the OASIS files and cannot be built if it is absent.
 
     Returns a dict with the staged ``oasis_dir`` and ``icmgg`` paths.
     """
@@ -76,7 +84,8 @@ def regenerate_for_submesh(
     ocp_tool_dir = Path(ocp_tool_dir) if ocp_tool_dir else Path(__file__).resolve().parent.parent
     python_exe = python_exe or sys.executable
 
-    raw = _build_config(template, mesh_dir, grid_name, ocp_tool_dir, generate_rmp)
+    raw = _build_config(template, mesh_dir, grid_name, ocp_tool_dir, generate_rmp,
+                        write_oasis_grid=write_oasis_grid)
     cfg_path = out_dir / f"ocp_config_{grid_name}.yaml"
     cfg_path.write_text(yaml.safe_dump(raw, sort_keys=False))
 
