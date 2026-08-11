@@ -100,6 +100,11 @@ class ProcessingOptions:
     parallel_workers: int
     use_dask: bool
     generate_rmp: bool = True  # Generate OASIS remapping weight files
+    # Appended to the modified ICMGG and to the LPJ-GUESS slt file. Files written
+    # before ocp-tool 863c94a gave every flipped cell soil type 6 and left the rest
+    # of its ocean column in place, and experiments already running use them under
+    # their unsuffixed names. Writing a new suffix by default keeps those readable.
+    output_suffix: str = '_v2'
 
 
 @dataclass
@@ -166,7 +171,9 @@ class OCPConfig:
 
     def get_icmgg_output_file(self) -> Path:
         """Get path to output ICMGG INIT file."""
-        return self.output_paths.openifs_modified / f'ICMGG{self.atmosphere.experiment_name}INIT_{self.ocean.grid_name}'
+        return (self.output_paths.openifs_modified /
+                f'ICMGG{self.atmosphere.experiment_name}INIT_{self.ocean.grid_name}'
+                f'{self.options.output_suffix}')
     
     def get_icmgg_iniua_input_file(self) -> Path:
         """Get path to input ICMGG INIUA file."""
@@ -286,6 +293,7 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
             parallel_workers=raw['options']['parallel_workers'],
             use_dask=raw['options']['use_dask'],
             generate_rmp=raw['options'].get('generate_rmp', True),
+            output_suffix=raw['options'].get('output_suffix', '_v2'),
         ),
         root_dir=root_dir,
         paleo=_load_paleo_config(raw, resolve_path) if 'paleo' in raw else None,

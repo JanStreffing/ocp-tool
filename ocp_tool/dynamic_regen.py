@@ -54,6 +54,10 @@ def _build_config(template, mesh_dir, grid_name, ocp_tool_dir, generate_rmp,
     ocean["force_overwrite_griddes"] = True
 
     raw.setdefault("options", {})["generate_rmp"] = bool(generate_rmp)
+    # No version suffix here. These products are written fresh into the coupling
+    # directory every cycle and are referenced by exact name from esm_tools, so
+    # they carry no risk of overwriting a pool file.
+    raw["options"]["output_suffix"] = ""
     # Pin root_dir so the input/ dirs resolve regardless of where we write the
     # generated config.
     raw.setdefault("paths", {})["root_dir"] = str(Path(ocp_tool_dir).resolve())
