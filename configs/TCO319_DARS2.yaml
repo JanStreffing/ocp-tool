@@ -1,0 +1,36 @@
+# OCP-Tool Configuration
+# Configuration: TCO319 + DARS2
+# Matches the TCO95_DARS2 config on the same mesh, at the resolution the DARS2
+# production runs use.
+
+# Atmosphere grid settings
+atmosphere:
+  resolution_list: [319]
+  truncation_type: "cubic-octahedral"
+  experiment_name: "abns"  # abns for TCO319, ab45 for TCO95
+
+# Ocean grid settings
+ocean:
+  grid_name: "DARS2"
+  has_ice_cavities: false
+  mesh_file: "/work/ab0246/a270092/input/fesom2/dars2/mesh.nc"
+
+# Basin modifications for runoff
+runoff:
+  manual_basin_removal:
+    - "caspian-sea"
+
+paths:
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+
+options:
+  verbose: true
+  parallel_workers: 4
+  use_dask: true
