@@ -473,8 +473,19 @@ def create_slt_output_for_lpjg(
         
         result = os.system(cmd_rename)
         if result != 0:
-            print(f"Warning: ncrename failed, variable may still be named 'slt'")
-        
+            print(f"Error: ncrename failed (exit {result}). Is NCO on PATH?")
+            return False
+
+        # LPJ-GUESS reads var43 and falls back to slt, so a file left with the
+        # wrong name still runs and the mistake surfaces much later. Check.
+        import netCDF4
+        with netCDF4.Dataset(slt_output_path) as ds:
+            if 'var43' not in ds.variables:
+                print(f"Error: {slt_output_path} has no var43, only "
+                      f"{list(ds.variables)}")
+                return False
+
+
         # Cleanup
         if temp_grib_file.exists():
             temp_grib_file.unlink()
