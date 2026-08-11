@@ -72,11 +72,18 @@ def write_oasis_grid_files(
     # Copy runoff files into OASIS files (skip for AMIP mode - no ocean coupling)
     if config.ocean.grid_name != 'AMIP':
         _append_runoff_to_oasis_files(config, file_types)
-        # Add FESOM ocean grid to OASIS files
-        _append_fesom_grid_to_oasis_files(config)
+        if config.ocean.write_oasis_grid:
+            _append_fesom_grid_to_oasis_files(config)
+        else:
+            print(' Skipping FESOM grid export (FESOM writes feom at runtime)')
     else:
         # Add AMIP forcing-reader grid for SST/SIC forcing
         _append_amip_grid_to_oasis_files(config, file_types)
+
+    # Add ice-sheet grids, off unless ice.enabled is set in the config
+    if config.ice is not None:
+        _append_pism_grid_to_oasis_files(config, file_types)
+        _write_ismm_restart(config)
 
 
 def _write_single_oasis_file(
@@ -247,6 +254,135 @@ def _append_fesom_grid_to_oasis_files(config: OCPConfig) -> None:
         print(f"Warning: Failed to add FESOM grid to OASIS files: {e}")
         import traceback
         traceback.print_exc()
+
+
+def _write_ismm_restart(config: OCPConfig, restart_name: str = "rstism.nc") -> None:
+    """Seed the ISM-mapper OASIS restart with the ice mask.
+
+    OASIS restarts hold the SOURCE field on the SOURCE grid and remap at read
+    time, so only <prefix>_plit is needed here; the atmosphere fluxes are safely
+    zero-filled by NNOREST. A mask is not: with LAG the receiver takes its first
+    value from this file, and an empty mask strips the glacier tiles from the
+    atmosphere for one coupling interval.
+    """
+    out = config.output_paths.oasis / restart_name
+    print(f' Writing ISM-mapper restart {out}')
+
+    wrote = []
+    for region in config.ice.regions:
+        try:
+            with Dataset(str(region.grid_file)) as src:
+                if "thk" not in src.variables:
+                    print(f'Warning: no thk in {region.grid_file}, skipping {region.name}')
+                    continue
+                thk = np.array(src.variables["thk"][:])
+        except Exception as e:
+            print(f'Warning: could not read {region.grid_file}: {e}')
+            continue
+
+        if thk.ndim == 3:
+            thk = thk[-1]
+        mask = np.where(thk > 0.0, 1.0, 0.0)
+
+        ny, nx = mask.shape
+        vn = f"{region.prefix}_plit"
+        mode = "a" if out.exists() else "w"
+        nc = Dataset(str(out), mode, format="NETCDF3_CLASSIC")
+        try:
+            yname, xname = f"ny_{region.name}", f"nx_{region.name}"
+            if yname not in nc.dimensions:
+                nc.createDimension(yname, ny)
+            if xname not in nc.dimensions:
+                nc.createDimension(xname, nx)
+            if vn not in nc.variables:
+                v = nc.createVariable(vn, "f8", (yname, xname))
+                v.units = "1"
+                v.long_name = "ice sheet mask, 1 = ice"
+                v[:] = mask
+                wrote.append(f"{vn} ({nx}x{ny}, {int(mask.sum())} ice cells)")
+        finally:
+            nc.close()
+
+    print(f"  {', '.join(wrote) if wrote else '(nothing written)'}")
+    print(f"\n {'='*50} \n")
+
+
+def _append_pism_grid_to_oasis_files(config: OCPConfig, file_types: list) -> None:
+    """Append each configured PISM ice-sheet domain to the OASIS files."""
+    from .grids import PISM
+
+    for region in config.ice.regions:
+        print(f' Adding PISM ice grid {region.name} from {region.grid_file}')
+        try:
+            grid = PISM(str(region.grid_file), name=region.name)
+            lats = grid.cell_latitudes()
+            lons = grid.cell_longitudes()
+            corners = grid.cell_corners()
+            areas = grid.cell_areas()
+            masks = grid.cell_masks()
+        except Exception as e:
+            print(f'Warning: failed to build PISM grid {region.name}: {e}')
+            import traceback
+            traceback.print_exc()
+            continue
+
+        ny, nx = lats.shape
+        name = region.name
+        xname, yname, crnname = f'x_{name}', f'y_{name}', f'crn_{name}'
+
+        for file_type in file_types:
+            oasis_file = config.output_paths.oasis / f'{file_type}.nc'
+            nc = Dataset(str(oasis_file), 'a')
+
+            if xname not in nc.dimensions:
+                nc.createDimension(xname, nx)
+            if yname not in nc.dimensions:
+                nc.createDimension(yname, ny)
+
+            if file_type == 'grids':
+                if crnname not in nc.dimensions:
+                    nc.createDimension(crnname, 4)
+                for vn, data, units, sname in (
+                    (f'{name}.lon', lons, 'degrees_east', 'Longitude'),
+                    (f'{name}.lat', lats, 'degrees_north', 'Latitude'),
+                ):
+                    if vn not in nc.variables:
+                        v = nc.createVariable(vn, 'float64', (yname, xname))
+                        v.units = units
+                        v.standard_name = sname
+                        v[:] = data
+                for vn, data, units, sname in (
+                    (f'{name}.clo', corners[1], 'degrees_east', 'Longitude corners'),
+                    (f'{name}.cla', corners[0], 'degrees_north', 'Latitude corners'),
+                ):
+                    if vn not in nc.variables:
+                        v = nc.createVariable(vn, 'float64', (crnname, yname, xname))
+                        v.units = units
+                        v.standard_name = sname
+                        v[:] = data
+
+            elif file_type == 'areas':
+                vn = f'{name}.srf'
+                if vn not in nc.variables:
+                    v = nc.createVariable(vn, 'float64', (yname, xname))
+                    v.units = 'm2'
+                    v.standard_name = 'Grid cell area'
+                    v[:] = areas
+
+            elif file_type == 'masks':
+                vn = f'{name}.msk'
+                if vn not in nc.variables:
+                    v = nc.createVariable(vn, 'int32', (yname, xname))
+                    v.units = '1'
+                    v.standard_name = 'Grid mask (0=active, 1=masked)'
+                    v[:] = masks
+
+            nc.close()
+
+        print(f'  {name}: {nx}x{ny}, total area {areas.sum()/1e12:.2f} x10^6 km2')
+
+    print(' PISM ice grid(s) added successfully')
+    print(f"\n {'='*50} \n")
 
 
 def _append_amip_grid_to_oasis_files(config: OCPConfig, file_types: list) -> None:

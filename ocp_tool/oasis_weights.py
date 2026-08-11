@@ -150,6 +150,42 @@ def awiesm3_feom_links(atm_grid: str = "A096", method: str = "existing") -> List
     ]
 
 
+def awiesm3_ismp_links(atm_grid: str = "A096", ice_grid: str = "ismp",
+                       method: str = "gauswgt") -> List[Link]:
+    """Links for a PISM ice sheet coupled through the ISM-mapper.
+
+    A link is one (source, target, map), not one per field, so the whole ISM
+    field set is three links. The SCRIPR letter is the SOURCE grid type: the
+    reduced-Gaussian atmosphere grids are D, the projected ice grid is LR.
+
+    ``method`` picks the ice -> atm map, "gauswgt" or "distwgt". Both BILINEAR
+    and CONSERV abort on a pole-centred grid: 381 of the 761x761 cells have a
+    corner longitude spread above 180 deg along the polar seam, and the pole
+    cell's corners encircle the pole outright, which breaks SCRIP's
+    enclosing-quadrilateral search and its per-cell longitude line integral.
+    So conservative is not available here, and plit reaches suorog as an
+    interpolated value rather than the area fraction ECE_LANDICE_THRESH reads.
+    """
+    if method not in ("gauswgt", "distwgt"):
+        raise ValueError(f"unknown method profile: {method}")
+    bilinear_d = "BILINEAR D SCALAR LATITUDE 15"
+    gauswgt_d = "GAUSWGT D SCALAR LATITUDE 1 25 0.1"
+    gauswgt_lr = "GAUSWGT LR SCALAR LATITUDE 1 25 0.1"
+    distwgt_lr = "DISTWGT LR SCALAR LATITUDE 1 4"
+
+    # Runoff is on the runoff-mapper's atmosphere grid (A096 -> R096), not atma.
+    rnf_atm_grid = "R" + atm_grid[1:]
+
+    return [
+        # atm -> ice: precip, evaporation, soil temperature, SST.
+        Link(atm_grid, ice_grid, bilinear_d),
+        # atm runoff grid -> ice: the R term of the direct P - E - R scheme.
+        Link(rnf_atm_grid, ice_grid, gauswgt_d),
+        # ice -> atm: plit.
+        Link(ice_grid, atm_grid, distwgt_lr if method == "distwgt" else gauswgt_lr),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Grid geometry read back from the OASIS description files
 # ---------------------------------------------------------------------------

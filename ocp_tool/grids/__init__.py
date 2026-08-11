@@ -1,5 +1,6 @@
 from .regular import RegularLatLonGrid, FullGaussianGrid
 from .orca import ORCA
+from .pism import PISM
 from .gaussian import ReducedGaussianGrid
 from .oifs import F128, TL159, TCO95, TL255, TCO159, TCO199, TCO319
 
@@ -28,6 +29,11 @@ def factory(grid_name, *args, **kwargs):
         'regular_latlon': RegularLatLonGrid,
     }
 
+    pism_grids = {
+        'pism': PISM,
+        'PISM': PISM,
+    }
+
     if grid_name in reduced_gaussian_grids:
         return ReducedGaussianGrid(
             lats=reduced_gaussian_grids[grid_name].yvals,
@@ -46,5 +52,8 @@ def factory(grid_name, *args, **kwargs):
 
     elif grid_name in regular_latlon_grids:
         return RegularLatLonGrid(*args, **kwargs)
+
+    elif grid_name in pism_grids:
+        return PISM(*args, **kwargs)
 
     raise NotImplementedError(f'Unknown grid type: {grid_name}')
