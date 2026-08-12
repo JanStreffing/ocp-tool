@@ -41,6 +41,38 @@ class RunoffConfig:
 
 
 @dataclass
+class LakeConfig:
+    """
+    Whether to put back the lake fields the land-sea flip destroys.
+
+    Reconciling the OpenIFS mask with the FESOM mesh makes a cell land wherever
+    FESOM has no wet node under it, and ``fill_flipped_from_nearest_neighbour``
+    then rebuilds its whole surface column from the nearest stable LAND cell.
+    Lake cover is only another surface field to that fill, so a cell the input
+    called a lake inherits a dry neighbour's ``cl`` and stops being one.
+
+    Measured on TCO95/CORE3 (scripts/analysis/lake_vs_soil_audit.py and
+    lake_pipeline_extract.py in the tuning campaign repo), of 319 cells flipped
+    from ocean to land: 70 carried ``cl >= 0.5`` in the pristine input --
+    the whole Caspian (27/27) and the Great Lakes (17/17) -- and after the flip
+    none of them do.
+
+    The option restores the pristine ``cl``, ``dl`` and FLake prognostics at
+    every flipped cell. It needs no threshold and no second mode: ``cl`` is the
+    lake share of the box and is capped by the water share, so the input file
+    has already classified each cell, and restoring its own value gives the
+    genuine lakes their ~0.8 and the coastal cells their ~0.02.
+
+    This does NOT change ``lsm``, so all four OASIS masks are unaffected, and it
+    does NOT remove those cells from the LPJ-GUESS gridlist, which is built from
+    ``lsm`` alone. The soil-type repair is therefore still required and is not
+    substitutable by this.
+    """
+    # Restore pristine cl/dl/FLake prognostics at every flipped cell.
+    restore_flipped_lakes: bool = False
+
+
+@dataclass
 class InputPaths:
     """Input directory paths."""
     fesom_mesh: Path
@@ -132,6 +164,7 @@ class OCPConfig:
     output_paths: OutputPaths
     options: ProcessingOptions
     root_dir: Path
+    lakes: LakeConfig = field(default_factory=LakeConfig)
     paleo: Optional[PaleoConfig] = None
     ice: Optional[IceConfig] = None
     
@@ -285,6 +318,10 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
         ),
         runoff=RunoffConfig(
             manual_basin_removal=raw['runoff']['manual_basin_removal'],
+        ),
+        lakes=LakeConfig(
+            restore_flipped_lakes=raw.get('lakes', {}).get(
+                'restore_flipped_lakes', False),
         ),
         input_paths=input_paths,
         output_paths=output_paths,
