@@ -12,7 +12,7 @@ import numpy as np
 import gribapi
 from shutil import copy2
 
-from .config import OCPConfig
+from .config import LakeConfig, OCPConfig
 from .cycles import check_lake_fields
 from .gaussian_grids import GaussianGrid
 
@@ -310,7 +310,7 @@ def modify_lsm(
     grid: GaussianGrid,
     verbose: bool = False,
     lake_ids: Optional[Dict[str, int]] = None,
-    lakes: Optional['LakeConfig'] = None,
+    lakes: Optional[LakeConfig] = None,
 ) -> LSMData:
     """
     Modify land-sea mask based on ocean model grid.
@@ -378,9 +378,9 @@ def modify_lsm(
                 gribfield_mod[lsm_id][i] = 1
                 changed_to_land.append(i)
 
-        # A flipped cell otherwise keeps the whole surface column of its OLD
-        # type: a new land point retains ocean's zero soil moisture, leftover
-        # sea-ice fraction and SST; a new ocean point retains land soil/skin
+        # A flipped cell otherwise keeps the whole surface column belonging to
+        # its OLD type. A new land point retains ocean's zero soil moisture,
+        # leftover sea-ice fraction and SST; a new ocean point keeps land skin
         # state. That mix is physically inconsistent and makes the atmosphere
         # surface/moist physics produce NaNs. Rebuild each flipped cell from the
         # nearest stable neighbour of its NEW type so every surface field looks
