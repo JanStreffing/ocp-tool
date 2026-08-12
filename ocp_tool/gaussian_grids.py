@@ -623,7 +623,39 @@ def read_fesom_grid_polygon(
         
         triag_dl = triag[valid_dl]
         cavity_dl = tri_has_cavity[valid_dl]
-        
+
+        # Drop triangles that STILL span more than 180 degrees after the shift.
+        #
+        # These are polar-cap triangles. At the pole longitude carries no
+        # information, so a cap triangle's three nodes can sit at any three
+        # longitudes at all -- on CORE2 the offender is a single triangle at
+        # lat 89.8-90.0 with longitudes 99, 173 and 336, a span of 237 degrees
+        # after shifting. Laid out in the plane it stretches across two thirds
+        # of the domain and overlaps almost every other triangle, and the
+        # trapezoid map the point-location index is built on cannot be
+        # constructed from overlapping triangles: it raises "Triangulation is
+        # invalid" and the whole dateline pass is lost.
+        #
+        # The consequence was silent and severe. Every point the pass would
+        # have classified stayed at the "land" default, so the CORE2 mask came
+        # out with all 192 cells on the lon = 180 meridian marked land against
+        # 9 % in the ECMWF input -- a wall of false land from pole to pole.
+        # CORE3 has such a triangle too and happened to survive, so this is not
+        # a CORE2 peculiarity, only a CORE2 symptom.
+        #
+        # Dropping them loses nothing: a triangle that cannot be drawn in the
+        # plane cannot locate points there either, and the pole is covered by
+        # the non-dateline triangles of Pass 1.
+        span_shifted = (lon_shifted[triag_dl].max(axis=1)
+                        - lon_shifted[triag_dl].min(axis=1))
+        unplanar = span_shifted > 180
+        if unplanar.any():
+            print(f'   dropping {int(unplanar.sum())} polar-cap triangle(s) that '
+                  f'still span >180 deg after the shift '
+                  f'(max {span_shifted[unplanar].max():.1f} deg)')
+            triag_dl = triag_dl[~unplanar]
+            cavity_dl = cavity_dl[~unplanar]
+
         try:
             tri_dl = Triangulation(lon_shifted, lat, triangles=triag_dl)
             finder_dl = tri_dl.get_trifinder()
@@ -642,7 +674,18 @@ def read_fesom_grid_polygon(
             
             print(f"   Found {np.sum(found_dl)} points in dateline triangles")
         except Exception as e:
-            print(f" Warning: Dateline triangulation failed: {e}")
+            # Not recoverable, and must not be downgraded to a warning. Every
+            # point this pass would have classified keeps the "land" default,
+            # so continuing writes a land-sea mask with a seam of false land
+            # along the dateline -- which is exactly what happened to the CORE2
+            # files, unnoticed, because this used to print and carry on.
+            raise RuntimeError(
+                f'Dateline triangulation failed ({e}). Continuing would leave '
+                f'every point near lon 180 at the land default and produce a '
+                f'seam of false land down the dateline. Inspect the '
+                f'{len(triag_dl)} dateline triangles of this mesh rather than '
+                f'accepting the mask.'
+            ) from e
     
     land_count = int(np.sum(fesom_lsm == 1))
     ocean_count = int(np.sum(fesom_lsm == 0))
