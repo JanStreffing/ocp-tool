@@ -51,6 +51,21 @@ import eccodes
 # ``typeOfLevel`` marking a message as belonging to the multi-layer snowpack.
 SNOW_LAYER_TYPE_OF_LEVEL = 'snowLayer'
 
+# Fields a cell needs in order to be represented as a FLake lake rather than as
+# soil.  ``cl`` is the lake fraction of the grid box and ``dl`` its depth; the
+# rest are the FLake prognostics, which the NN fill has to be able to seed.
+#
+# These were expected to be a CY48R1 addition.  They are not: measured against
+#   input/openifs_input_default/ICMGGab45INIT            (48r1, TCO95)
+#   /work/ab0246/a270092/input/oifs-43r3/TL159L60/ICMGGh6mvINIT_CORE2
+# both files carry cl, dl, lmlt, lblt, lmld, lict, licd, ltlt and lshf.  FLake
+# has been in the IFS surface scheme since well before either cycle, so the
+# cycle number is not the thing that decides this.  ``lake_fields`` is kept as
+# the place a future cycle without FLake would be declared, but the guard that
+# actually protects a run is ``check_lake_fields`` below, which looks in the
+# file instead of trusting the label.
+LAKE_FIELDS = ('cl', 'dl', 'lmlt', 'lblt', 'lmld', 'lict', 'licd', 'ltlt', 'lshf')
+
 # Snow water equivalent assigned to a reconstruction ice-sheet point, in
 # metres of water equivalent.  Scaled to the file units via CycleSpec.
 ICE_SHEET_SNOW_MWE = 10.0
@@ -69,6 +84,9 @@ class CycleSpec:
     snow_mass_units: str
     # GRIB codes carried once per snow layer (empty for single-layer cycles)
     snow_layer_codes: Tuple[int, ...] = ()
+    # Does the ICMGG carry the FLake fields needed to represent a cell as lake?
+    # See LAKE_FIELDS and the note above.
+    lake_fields: bool = True
 
     def scale_snow_mass(self, metres_water_equivalent: float) -> float:
         """Convert m of water equivalent to the snow mass units of this cycle."""
@@ -131,6 +149,43 @@ def get_cycle(name: str) -> CycleSpec:
     if key == AUTO:
         raise ValueError("get_cycle() needs an explicit cycle, not 'auto'")
     return CYCLES[key]
+
+
+def check_lake_fields(
+    grib_file: Union[str, Path],
+    cycle: CycleSpec,
+) -> None:
+    """
+    Raise unless ``grib_file`` can support representing a cell as a FLake lake.
+
+    Checked against the file, not against the cycle name: the cycle label is a
+    statement about what a cycle *usually* carries, and an ICMGG assembled by
+    hand may not. A missing FLake prognostic is the failure that otherwise
+    appears at model start-up as ``GRIDPOINT 2D FIELD MISSING``, long after the
+    tool has exited successfully.
+    """
+    if not cycle.lake_fields:
+        raise ValueError(
+            f"lakes.restore_flipped_lakes is on, but OpenIFS cycle "
+            f"{cycle.name} is declared as having no FLake fields."
+        )
+    present = set()
+    with open(grib_file, 'rb') as f:
+        while True:
+            gid = eccodes.codes_grib_new_from_file(f)
+            if gid is None:
+                break
+            try:
+                present.add(eccodes.codes_get(gid, 'shortName'))
+            finally:
+                eccodes.codes_release(gid)
+    absent = [n for n in LAKE_FIELDS if n not in present]
+    if absent:
+        raise ValueError(
+            f"lakes.restore_flipped_lakes is on, but {grib_file} is missing the "
+            f"FLake field(s) {absent}. Turn the option off, or use an ICMGG that "
+            f"carries the full FLake set {list(LAKE_FIELDS)}."
+        )
 
 
 def has_snow_layers(grib_file: Union[str, Path]) -> bool:

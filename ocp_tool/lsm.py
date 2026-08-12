@@ -5,15 +5,36 @@ Handles reading, modifying, and writing GRIB land-sea mask files.
 
 import copy
 from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional
 from dataclasses import dataclass
 
 import numpy as np
 import gribapi
 from shutil import copy2
 
-from .config import OCPConfig
+from .config import LakeConfig, OCPConfig
+from .cycles import check_lake_fields
 from .gaussian_grids import GaussianGrid
+
+
+# FLake does not integrate the lake depth it is given. It clips it:
+#
+#   flakeene_mod.F90:211  ZDEPTH_W_MAX = 50.0   ! Maximum lake depth simulated
+#   flakeene_mod.F90:212  ZDEPTH_W_MIN =  2.0   ! Minimum lake depth simulated
+#   flakeene_mod.F90:238  ZDEPTH_W(JL) = MIN(ZDEPTH_W_MAX, MAX(ZDEPTH_W_MIN, PDEPTH_W(JL)))
+#
+# and independently again when seeding the mixed layer,
+#
+#   surftstp_ctl_mod.F90:882  ZHLML(JL) = MIN(PLDEPTH(JL), 50.0_JPRB)
+#
+# so 2 m and 50 m are the only depths at the ends of the range that mean
+# anything, and a deeper number is indistinguishable from 50 m.
+FLAKE_DEPTH_MIN_M = 2.0
+FLAKE_DEPTH_MAX_M = 50.0
+
+# FLake prognostics, restored alongside the cover so a recovered lake starts
+# from its own state. Ordering is irrelevant; presence is checked per field.
+FLAKE_PROGNOSTICS = ('lmlt', 'lblt', 'lmld', 'lict', 'licd', 'ltlt', 'lshf')
 
 
 @dataclass
@@ -179,6 +200,106 @@ def fill_flipped_from_nearest_neighbour(
               f'{len(changed_to_ocean)} new-ocean cells from nearest neighbours')
 
 
+def read_field_ids(input_file: Path) -> Dict[str, int]:
+    """
+    shortName -> position in the gribfield list, in file order.
+
+    ``read_grib_fields`` returns indices for only the three fields it needs.
+    Anything else that has to be addressed by name -- the FLake set, here --
+    needs the same mapping for the rest of the file. Built by a second scan
+    rather than threaded through the existing return tuple, which several
+    callers unpack positionally.
+
+    On a duplicated shortName the FIRST occurrence wins, matching
+    ``read_grib_fields``.
+    """
+    ids: Dict[str, int] = {}
+    with open(input_file, 'rb') as f:
+        i = 0
+        while True:
+            gid = gribapi.grib_new_from_file(f)
+            if gid is None:
+                break
+            try:
+                ids.setdefault(gribapi.grib_get(gid, 'shortName'), i)
+            finally:
+                gribapi.grib_release(gid)
+            i += 1
+    return ids
+
+
+def _clip_flake_depth(depth: float) -> float:
+    """Clip to the band FLake actually integrates over."""
+    return float(min(FLAKE_DEPTH_MAX_M, max(FLAKE_DEPTH_MIN_M, depth)))
+
+
+def restore_lake_cover(
+    gribfield_pristine: Dict[int, np.ndarray],
+    gribfield_mod: List[np.ndarray],
+    lake_ids: Dict[str, int],
+    changed_to_land: List[int],
+    verbose: bool = False,
+) -> int:
+    """
+    Put back the lake fields that the nearest-neighbour fill overwrote.
+
+    Must run AFTER ``fill_flipped_from_nearest_neighbour``, because that is what
+    destroyed them. The pristine snapshot is needed as well as the modified
+    list: the point is to recover what the input file said before the fill
+    replaced it with a dry neighbour's value.
+
+    ONE RULE, NO THRESHOLD. Every flipped cell gets its own pristine ``cl``,
+    ``dl`` and FLake prognostics back. Nothing is invented and nothing is
+    reclassified, because the input file has already done the classification
+    and it is more informative than any threshold applied here:
+
+    ``cl`` is the lake share of the grid box, capped by the water share -- on
+    TCO95 ``cl <= 1 - lsm`` holds at every one of the 40 320 cells. So at the
+    cells that were genuinely lake (the Caspian, the Great Lakes) the file says
+    ``cl = 1 - lsm`` exactly, mean 0.799; and at the coastal cells whose water
+    is sea rather than lake it says ``cl = 0.019`` against a water share of
+    0.663. Restoring the pristine value therefore gives each population what
+    ECMWF classified it as, in one operation.
+
+    An earlier version of this thresholded on ``cl >= 0.5`` and wrote ``1.0``.
+    That overstated lake area at those cells by 20 % on average, since 27 of
+    the 70 sit between 0.5 and 0.7, and it needed a companion option to decide
+    what to do with everything else. Both problems are artefacts of the
+    threshold, not of the data.
+
+    ``dl`` is clipped to the band FLake actually integrates,
+    ``MIN(50, MAX(2, dl))`` (``flakeene_mod.F90:238`` and
+    ``surftstp_ctl_mod.F90:882``), so the file says what the model will do.
+
+    Returns
+    -------
+    int : how many cells were restored.
+    """
+    if not changed_to_land:
+        return 0
+
+    cl_id, dl_id = lake_ids['cl'], lake_ids['dl']
+    idx = np.asarray(changed_to_land, dtype=int)
+
+    # Everything FLake needs, so a recovered lake starts from its own state
+    # rather than from whatever dry neighbour the fill happened to pick.
+    fields = [lake_ids[n] for n in ('cl', 'dl') + FLAKE_PROGNOSTICS
+              if n in lake_ids and lake_ids[n] in gribfield_pristine]
+
+    for i in idx:
+        for f in fields:
+            if len(gribfield_mod[f]) > i and len(gribfield_pristine[f]) > i:
+                gribfield_mod[f][i] = gribfield_pristine[f][i]
+        gribfield_mod[dl_id][i] = _clip_flake_depth(gribfield_pristine[dl_id][i])
+
+    if verbose:
+        pris = np.asarray(gribfield_pristine[cl_id], float)[idx]
+        print(f'  Lake fields restored at {len(idx)} flipped cells '
+              f'(mean cl {pris.mean():.3f}; '
+              f'{int((pris >= 0.5).sum())} of them are majority lake)')
+    return len(idx)
+
+
 def modify_lsm(
     gribfield: List[np.ndarray],
     ocean_lsm: np.ndarray,
@@ -187,16 +308,19 @@ def modify_lsm(
     slt_id: int,
     cl_id: int,
     grid: GaussianGrid,
-    verbose: bool = False
+    verbose: bool = False,
+    lake_ids: Optional[Dict[str, int]] = None,
+    lakes: Optional[LakeConfig] = None,
 ) -> LSMData:
     """
     Modify land-sea mask based on ocean model grid.
-    
+
     - Flips the land-sea mask to agree with the ocean model grid
     - Rebuilds each flipped cell's full surface column from the nearest stable
       neighbour of its new type (so it is physically self-consistent)
+    - Optionally gives back the lake cover that rebuild removed
     - Creates masks for different purposes (atmosphere, land, runoff)
-    
+
     Args:
         gribfield: List of GRIB field arrays
         ocean_lsm: Ocean model land-sea mask
@@ -206,7 +330,9 @@ def modify_lsm(
         cl_id: Index of lake cover field
         grid: Gaussian grid data
         verbose: Print debug info
-        
+        lake_ids: shortName -> gribfield index, needed only for the lake step
+        lakes: LakeConfig; the lake step is skipped when it is None or off
+
     Returns:
         LSMData with modified masks and land point coordinates
     """
@@ -223,6 +349,23 @@ def modify_lsm(
         # Polygon method: ocean_lsm = 1 means land, 0 means ocean
         n_points = len(gribfield_mod[slt_id])
 
+        # gribfield_mod is a SHALLOW copy, so the NN fill below mutates these
+        # arrays in place and the input values are gone once it has run. The
+        # lake step needs to know what the file said before that, so snapshot
+        # the fields it reads while they are still pristine.
+        do_lakes = lakes is not None and lakes.restore_flipped_lakes
+        pristine_lake = {}
+        if do_lakes:
+            if lake_ids is None or 'cl' not in lake_ids or 'dl' not in lake_ids:
+                raise ValueError(
+                    'lakes.restore_flipped_lakes is on but the cl/dl field '
+                    'indices were not supplied to modify_lsm().'
+                )
+            for name in ('cl', 'dl') + FLAKE_PROGNOSTICS:
+                f = lake_ids.get(name)
+                if f is not None and f < len(gribfield_mod):
+                    pristine_lake[f] = np.array(gribfield_mod[f], copy=True)
+
         changed_to_ocean = []
         changed_to_land = []
         for i in range(n_points - 1):
@@ -235,9 +378,9 @@ def modify_lsm(
                 gribfield_mod[lsm_id][i] = 1
                 changed_to_land.append(i)
 
-        # A flipped cell otherwise keeps the whole surface column of its OLD
-        # type: a new land point retains ocean's zero soil moisture, leftover
-        # sea-ice fraction and SST; a new ocean point retains land soil/skin
+        # A flipped cell otherwise keeps the whole surface column belonging to
+        # its OLD type. A new land point retains ocean's zero soil moisture,
+        # leftover sea-ice fraction and SST; a new ocean point keeps land skin
         # state. That mix is physically inconsistent and makes the atmosphere
         # surface/moist physics produce NaNs. Rebuild each flipped cell from the
         # nearest stable neighbour of its NEW type so every surface field looks
@@ -246,6 +389,17 @@ def modify_lsm(
             gribfield_mod, lsm_id, grid,
             changed_to_land, changed_to_ocean, verbose=verbose,
         )
+
+        # ...and the fill has just overwritten the lake cover of every cell that
+        # used to be one, because cl is only another surface field to it.
+        if do_lakes:
+            restore_lake_cover(
+                gribfield_pristine=pristine_lake,
+                gribfield_mod=gribfield_mod,
+                lake_ids=lake_ids,
+                changed_to_land=changed_to_land,
+                verbose=verbose,
+            )
     else:
         print(" Skipped modifying OpenIFS grid, because we are in AMIP mode")
     
@@ -368,6 +522,15 @@ def process_land_sea_mask(
         verbose=config.options.verbose
     )
     
+    # The lake step addresses fields by name, which read_grib_fields does not
+    # provide beyond lsm/slt/cl, and it must not run against a file that cannot
+    # support it -- so resolve the indices and verify the file up front, before
+    # anything has been modified.
+    lake_ids = None
+    if config.lakes.restore_flipped_lakes:
+        check_lake_fields(input_file, config.cycle)
+        lake_ids = read_field_ids(input_file)
+
     # Modify LSM based on ocean grid
     lsm_data = modify_lsm(
         gribfield=gribfield,
@@ -377,7 +540,9 @@ def process_land_sea_mask(
         slt_id=slt_id,
         cl_id=cl_id,
         grid=grid,
-        verbose=config.options.verbose
+        verbose=config.options.verbose,
+        lake_ids=lake_ids,
+        lakes=config.lakes,
     )
     
     # Write modified GRIB
