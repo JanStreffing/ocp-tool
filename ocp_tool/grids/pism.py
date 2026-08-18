@@ -53,6 +53,63 @@ class PISM:
         with Dataset(self.grid_file) as nc:
             return np.array(nc["lon"][:], dtype=float)
 
+    def _y_sign(self, transformer):
+        """Sign the inverse projection needs on y to reproduce the file's lon.
+
+        PROJ's south polar stereographic gives lon = lon_0 + atan2(x, y). Some
+        PISM grids -- including the antarct_cr ones -- store lon as
+        atan2(x, -y): their y axis runs the other way. Latitude cannot see the
+        difference, since it depends only on sqrt(x^2 + y^2). So the mismatch is
+        invisible in cell_latitudes() and in cell_areas() (a reflection preserves
+        spherical area), and shows up ONLY as corner longitudes mirrored to
+        180 - lon.
+
+        That is the defect that put every iceberg on the wrong side of
+        Antarctica in repro_ism37 (found 2026-08-18): the mirrored corners
+        reached latest_discharge.nc via add_cell_bounds.py, the berg generator
+        averaged them for its cell centres, and 99.6% of discharge cells were
+        placed wrongly -- median error 79.9 deg.
+
+        Measured against the file rather than assumed, so a grid that does follow
+        the PROJ convention keeps working unchanged.
+        """
+        x, y = self._xy()
+        X, Y = np.meshgrid(x, y)
+        lon_file = self.cell_longitudes()
+
+        best = None
+        for sy in (1.0, -1.0):
+            lon_p, _ = transformer.transform(X, sy * Y)
+            err = np.abs((lon_p - lon_file + 180.0) % 360.0 - 180.0)
+            med = float(np.median(err))
+            if best is None or med < best[1]:
+                best = (sy, med)
+            if med < 1.0e-3:
+                return sy
+
+        raise RuntimeError(
+            f"PISM.cell_corners: neither y orientation reproduces the lon stored "
+            f"in {self.grid_file} (best median error {best[1]:.3f} deg at "
+            f"y*{best[0]:+.0f}). The proj4 built from the mapping attributes does "
+            f"not describe this grid, so the corners would be wrong. proj4 was: "
+            f"{self.proj4}"
+        )
+
+    @staticmethod
+    def _is_ccw(corners):
+        """True if the corner sequence runs counterclockwise seen from outside.
+
+        Median over all cells, so a few degenerate cells at the pole cannot flip
+        the verdict.
+        """
+        lat = np.radians(corners[0])
+        lon = np.radians(corners[1])
+        v = [np.stack([np.cos(lat[k]) * np.cos(lon[k]),
+                       np.cos(lat[k]) * np.sin(lon[k]),
+                       np.sin(lat[k])], axis=0) for k in range(3)]
+        n = np.cross(v[1] - v[0], v[2] - v[0], axis=0)
+        return float(np.median(np.einsum("i...,i...->...", n, v[0]))) > 0.0
+
     def cell_corners(self):
         """Corner lat/lon as (2, 4, ny, nx), ORCA convention (0=lat, 1=lon).
 
@@ -68,13 +125,18 @@ class PISM:
         transformer = pyproj.Transformer.from_crs(
             pyproj.CRS.from_proj4(self.proj4), "EPSG:4326", always_xy=True
         )
-        lonc, latc = transformer.transform(XC, YC)
+        lonc, latc = transformer.transform(XC, self._y_sign(transformer) * YC)
 
         corners = np.empty((2, 4, *self.cell_latitudes().shape))
         corners[0] = np.stack([latc[:-1, :-1], latc[:-1, 1:],
                                latc[1:, 1:], latc[1:, :-1]])
         corners[1] = np.stack([lonc[:-1, :-1], lonc[:-1, 1:],
                                lonc[1:, 1:], lonc[1:, :-1]])
+
+        # A y-flip is a reflection, so it reverses the winding. Checked rather
+        # than tied to the sign, so the CCW promise above holds either way.
+        if not self._is_ccw(corners):
+            corners = corners[:, ::-1]
         return corners
 
     def cell_areas(self, earth_radius=6371229.0):
