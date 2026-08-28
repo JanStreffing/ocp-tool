@@ -1,0 +1,33 @@
+# OCP-Tool Configuration -- TCO95 + CORE3 (albedo paths, new 220509-node mesh)
+# Regenerates the _v2 coupling files against the updated CORE3 (devJigFinal) mesh.
+
+atmosphere:
+  resolution_list: [95]
+  truncation_type: "cubic-octahedral"
+  experiment_name: "ab45"  # ab45 for TCO95
+
+ocean:
+  grid_name: "CORE3"
+  has_ice_cavities: true
+  # mesh.nc does not exist yet; ocp-tool generates it from the ASCII .out files
+  # in this directory via pyfesom2.
+  mesh_file: "/albedo/pool/fesom2/core3/mesh.nc"
+
+runoff:
+  manual_basin_removal:
+    - "caspian-sea"
+
+paths:
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+
+options:
+  verbose: true
+  parallel_workers: 4
+  use_dask: true
