@@ -58,6 +58,13 @@ def _build_config(template, mesh_dir, grid_name, ocp_tool_dir, generate_rmp,
     # directory every cycle and are referenced by exact name from esm_tools, so
     # they carry no risk of overwriting a pool file.
     raw["options"]["output_suffix"] = ""
+    # Restore the lake fields, unless the template has already decided. A static
+    # regeneration flips a cell once and the option is off by default there, but
+    # here the coastline moves every cycle, so leaving it off drops the lakes
+    # again on every leg. Measured on the TCO95 cavity submesh: all 70 majority
+    # lake cells, the Caspian and the Great Lakes among them, come out with no
+    # lake cover at all.
+    raw.setdefault("lakes", {}).setdefault("restore_flipped_lakes", True)
     # Pin root_dir so the input/ dirs resolve regardless of where we write the
     # generated config.
     raw.setdefault("paths", {})["root_dir"] = str(Path(ocp_tool_dir).resolve())
