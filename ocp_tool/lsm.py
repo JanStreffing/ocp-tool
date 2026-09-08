@@ -632,7 +632,7 @@ def create_slt_output_for_lpjg(
             return False
         
         # Rename variable from 'slt' to 'var43' (LPJ-GUESS expects var43)
-        cmd_rename = f"ncrename -v slt,var43 {slt_output_path}"
+        cmd_rename = f"ncrename -v .slt,var43 {slt_output_path}"
         if config.options.verbose:
             print(f"Running: {cmd_rename}")
         
