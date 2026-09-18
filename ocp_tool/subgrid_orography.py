@@ -248,6 +248,29 @@ def compute_sso(
     flon = flon[:nx2].reshape(-1, blk).mean(axis=1)
     h = h.reshape(ny2 // blk, blk, nx2 // blk, blk).mean(axis=(1, 3))
     ny, nx = h.shape
+
+    # The block average above makes the cell about 5 km north to south, but a
+    # regular lat/lon cell shrinks as cos(lat) east to west: 5.5 km at the
+    # equator is 1 km at 80S. Left alone that samples the gradient tensor far
+    # more finely in longitude than in latitude, biasing the anisotropy toward
+    # zonal structure in a pattern organised radially about the pole. It shows
+    # as radial spokes in isor over Antarctica, which is precisely where an ice
+    # sheet coupling needs the field. So bring the zonal resolution back to the
+    # meridional one, per row.
+    from scipy.ndimage import uniform_filter1d
+
+    dy_km = 180.0 / ny * 111.0
+    dx_km = 360.0 / nx * 111.0 * np.cos(np.radians(flat))
+    zonal_width = np.clip(
+        np.round(dy_km / np.maximum(dx_km, 1e-9)).astype(int), 1, max(nx // 4, 1))
+    for w in np.unique(zonal_width):
+        if w > 1:
+            rows_w = zonal_width == w
+            h[rows_w] = uniform_filter1d(h[rows_w], int(w), axis=1, mode="wrap")
+    if verbose:
+        print(f"    zonal prefilter width 1 at the equator, "
+              f"{zonal_width.max()} at the polar row")
+
     if delta is not None:
         h = h + delta(flat, flon).astype(np.float32)
 
@@ -258,16 +281,22 @@ def compute_sso(
             % grid.pl[r] for r in range(grid.nrows)]
     idx_of = lambda r: grid.start[r] + cols[r]
 
+    # Weight by cos(lat): a regular lat/lon cell carries less area the further
+    # poleward it is, so an unweighted box mean over-represents its poleward
+    # edge. Small inside one box, but free to get right.
+    wrow = np.cos(np.radians(flat)).clip(1e-9)
+
     acc = {k: np.zeros(grid.size) for k in
            ("n", "h", "h2", "gx", "gy", "gx2", "gy2", "gxy")}
     for k, r in enumerate(rows):
         idx = idx_of(r)
-        acc["n"] += np.bincount(idx, minlength=grid.size)
-        acc["h"] += np.bincount(idx, weights=h[k], minlength=grid.size)
-        acc["h2"] += np.bincount(idx, weights=h[k].astype(np.float64) ** 2,
+        acc["n"] += np.bincount(idx, weights=np.full(nx, wrow[k]),
+                                minlength=grid.size)
+        acc["h"] += np.bincount(idx, weights=h[k] * wrow[k], minlength=grid.size)
+        acc["h2"] += np.bincount(idx, weights=h[k].astype(np.float64) ** 2 * wrow[k],
                                  minlength=grid.size)
 
-    if (acc["n"] == 0).any():
+    if (acc["n"] <= 0).any():
         raise RuntimeError(
             f"{int((acc['n'] == 0).sum())} of {grid.size} target boxes received "
             "no fine point. The prefiltered orography is too coarse for this "
@@ -318,20 +347,32 @@ def compute_sso(
     dlon = np.radians(360.0 / nx)
     dy = RA * np.radians(180.0 / ny)
     dx = (RA * np.cos(np.radians(flat))[:, None] * dlon).clip(1.0)
-    gx = (np.roll(resid, -st, axis=1) - np.roll(resid, st, axis=1)) / (2.0 * st * dx)
+
+    # Same reason as the zonal prefilter: the zonal difference has to span the
+    # same physical distance as the meridional one, or the tensor is measuring
+    # two different scales in the two directions and the anisotropy is an
+    # artefact of the grid.
+    gx = np.empty_like(resid)
+    for w in np.unique(zonal_width):
+        rows_w = zonal_width == w
+        sx = max(int(w) * st, 1)
+        block = resid[rows_w]
+        gx[rows_w] = ((np.roll(block, -sx, axis=1) - np.roll(block, sx, axis=1))
+                      / (2.0 * sx * dx[rows_w]))
     gy = np.empty_like(resid)
     gy[st:-st] = (resid[2 * st:] - resid[:-2 * st]) / (2.0 * st * dy)
     gy[:st], gy[-st:] = gy[st], gy[-st - 1]
 
     for k, r in enumerate(rows):
         idx = idx_of(r)
-        acc["gx"] += np.bincount(idx, weights=gx[k], minlength=grid.size)
-        acc["gy"] += np.bincount(idx, weights=gy[k], minlength=grid.size)
-        acc["gx2"] += np.bincount(idx, weights=gx[k].astype(np.float64) ** 2,
+        acc["gx"] += np.bincount(idx, weights=gx[k] * wrow[k], minlength=grid.size)
+        acc["gy"] += np.bincount(idx, weights=gy[k] * wrow[k], minlength=grid.size)
+        acc["gx2"] += np.bincount(idx, weights=gx[k].astype(np.float64) ** 2 * wrow[k],
                                   minlength=grid.size)
-        acc["gy2"] += np.bincount(idx, weights=gy[k].astype(np.float64) ** 2,
+        acc["gy2"] += np.bincount(idx, weights=gy[k].astype(np.float64) ** 2 * wrow[k],
                                   minlength=grid.size)
-        acc["gxy"] += np.bincount(idx, weights=(gx[k] * gy[k]).astype(np.float64),
+        acc["gxy"] += np.bincount(idx,
+                                  weights=(gx[k] * gy[k]).astype(np.float64) * wrow[k],
                                   minlength=grid.size)
 
     gx2, gy2, gxy = acc["gx2"] / n, acc["gy2"] / n, acc["gxy"] / n
