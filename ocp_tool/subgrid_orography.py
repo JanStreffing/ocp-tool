@@ -154,6 +154,8 @@ def compute_sso(
     grid: ReducedGaussian,
     delta: Optional[DeltaFn] = None,
     sea_level_clip: bool = True,
+    remove_mean_slope: bool = True,
+    gradient_stencil: int = 3,
     verbose: bool = False,
 ) -> Dict[str, np.ndarray]:
     """Accumulate the Lott and Miller statistics onto ``grid``.
@@ -161,9 +163,18 @@ def compute_sso(
     Returns a dict with ``mean``, ``sdor``, ``isor``, ``anor``, ``slor`` and the
     per-box fine-point count ``n``.
 
-    The fine grid is streamed in latitude bands with a one-row halo, so the
-    memory cost is the band, not the DEM: ETOPO1 at the default band size is
-    about 100 MB rather than 1.8 GB.
+    The fine grid is streamed in latitude bands, so the memory cost is the band
+    and not the DEM: ETOPO1 at the default band size is about 100 MB rather than
+    1.8 GB.
+
+    ``gradient_stencil`` is the half-width, in fine grid points, of the centred
+    difference used for the slope. It matters: on ETOPO1 the slor ratio against
+    ECMWF runs 1.69, 1.27, 0.88, 0.59 for stencils 1, 2, 4, 8, crossing one at
+    about 5 km, while the correlation stays near 0.89 throughout. So ECMWF's
+    slope is evaluated over roughly 5 km rather than at the raw DEM spacing,
+    which is what a filtering step in their preprocessing would do. The default
+    of 3 puts the ratio near one on ETOPO1; a different DEM needs it rechosen,
+    with tools/validate_subgrid_orography.py.
     """
     ds, flat, flon = fine.open()
     try:
@@ -172,12 +183,14 @@ def compute_sso(
         dy = RA * np.radians(180.0 / ny)
 
         acc = {k: np.zeros(grid.size) for k in
-               ("n", "h", "h2", "gx2", "gy2", "gxy")}
+               ("n", "h", "h2", "gx", "gy", "gx2", "gy2", "gxy")}
 
         for j0 in range(0, ny, fine.band_rows):
             j1 = min(j0 + fine.band_rows, ny)
-            # one-row halo so the meridional gradient is centred everywhere
-            a, b = max(j0 - 1, 0), min(j1 + 1, ny)
+            # halo of the stencil width, so the meridional gradient is centred
+            # everywhere in the band
+            st = max(int(gradient_stencil), 1)
+            a, b = max(j0 - st, 0), min(j1 + st, ny)
             h = np.asarray(ds[fine.variable][a:b, :], dtype=np.float64)
             if sea_level_clip:
                 # The IFS orography is zero over sea, not bathymetry.
@@ -188,10 +201,11 @@ def compute_sso(
             # Zonal spacing shrinks as cos(lat) and reaches zero at the pole;
             # clip so the polar rows cannot produce an infinite gradient.
             dx = (RA * np.cos(np.radians(flat[a:b]))[:, None] * dlon).clip(1.0)
-            gx = (np.roll(h, -1, axis=1) - np.roll(h, 1, axis=1)) / (2.0 * dx)
+            gx = ((np.roll(h, -st, axis=1) - np.roll(h, st, axis=1))
+                  / (2.0 * st * dx))
             gy = np.empty_like(h)
-            gy[1:-1] = (h[2:] - h[:-2]) / (2.0 * dy)
-            gy[0], gy[-1] = gy[1], gy[-2]
+            gy[st:-st] = (h[2 * st:] - h[:-2 * st]) / (2.0 * st * dy)
+            gy[:st], gy[-st:] = gy[st], gy[-st - 1]
 
             lo = j0 - a
             hi = lo + (j1 - j0)
@@ -209,6 +223,10 @@ def compute_sso(
                 acc["n"] += np.bincount(idx, minlength=grid.size)
                 acc["h"] += np.bincount(idx, weights=hb[k], minlength=grid.size)
                 acc["h2"] += np.bincount(idx, weights=hb[k] ** 2,
+                                         minlength=grid.size)
+                acc["gx"] += np.bincount(idx, weights=gxb[k],
+                                         minlength=grid.size)
+                acc["gy"] += np.bincount(idx, weights=gyb[k],
                                          minlength=grid.size)
                 acc["gx2"] += np.bincount(idx, weights=gxb[k] ** 2,
                                           minlength=grid.size)
@@ -233,6 +251,16 @@ def compute_sso(
     sdor = np.sqrt(np.maximum(acc["h2"] / n - mean ** 2, 0.0))
 
     gx2, gy2, gxy = acc["gx2"] / n, acc["gy2"] / n, acc["gxy"] / n
+    if remove_mean_slope:
+        # Baines and Palmer take the statistics of the orography left after the
+        # resolved plane through the box is removed. Removing a least-squares
+        # plane is the same as subtracting the mean gradient, so the second
+        # moments become covariances. Without this the resolved slope of a
+        # mountain range is counted as subgrid slope.
+        gxm, gym = acc["gx"] / n, acc["gy"] / n
+        gx2 = gx2 - gxm ** 2
+        gy2 = gy2 - gym ** 2
+        gxy = gxy - gxm * gym
     K = 0.5 * (gx2 + gy2)
     L = 0.5 * (gx2 - gy2)
     M = gxy
