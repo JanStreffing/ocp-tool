@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check the Lott and Miller subgrid orography against what ECMWF ships.
 
+The calnoro path (paleo_subgrid_oro.py) is the ECHAM one and is not checked here.
+
 Nothing that writes an ICMGG should be trusted until this reproduces
 ``climate.v020/<res>/{stdgwd,isogwd,slogwd}``. Run it as
 
@@ -25,7 +27,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ocp_tool.subgrid_orography import (  # noqa: E402
+from ocp_tool.subgrid_oro_lott_miller import (  # noqa: E402
     FineOrography,
     compute_sso,
     format_report,

@@ -2,16 +2,26 @@
 # OpenIFS Coupling Preparation Tool
 # Configuration: TCO95 L91 + CORE3 without ice cavities
 #
-# TCO95_CORE3.yaml against the core3_nocav mesh. The ASCII mesh files are
-# byte-identical to core3; only namelist.config differs (use_cavity=.false.),
-# so the 10038 cavity nodes become open ocean in the OpenIFS mask.
-# mesh.nc does not exist yet and is built from the ASCII files by pyfesom2.
+# core3_nocav is CORE3 with the ice-shelf cavities cut out of the mesh, not
+# CORE3 read with use_cavity=.false.:
+#
+#   core3        220509 nodes  426403 elements
+#   core3_nocav  211726 nodes  409913 elements
+#
+# so the 8783 missing nodes are gone from the triangulation rather than
+# reclassified, and the OpenIFS mask has to be built from this mesh's own
+# ASCII files. mesh.nc does not ship with the mesh; pyfesom2 builds it on the
+# first run from nod2d/elem2d/aux3d/nlvls/elvls.
 
 # Atmosphere grid settings
 atmosphere:
   resolution_list: [95]
   truncation_type: "cubic-octahedral"
-  experiment_name: "ab45"  # ICMGGab45INIT is the TCO95L91 file
+  experiment_name: "ab45"  # ICMGGab45INIT/ICMSHab45INIT are the TCO95L91 files
+  # ab45 is an OpenIFS 48r1 file (multi-layer snow, GRIB2). Pinned rather than
+  # left at auto so a swapped input file fails loudly instead of silently
+  # switching the tool to the 43r3 snow layout.
+  model_cycle: "48r1"
 
 # Ocean grid settings
 ocean:
