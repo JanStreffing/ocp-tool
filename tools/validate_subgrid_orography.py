@@ -81,8 +81,9 @@ def main():
     # The grid-scale orography ECMWF subtract is the model's own, which ships
     # in the same climate set. Pass it rather than letting the box means stand
     # in for it, so the band-pass is the one they actually apply.
+    lsm_all = grib_values(args.climate_dir / "lsmoro")
     gso = None if args.no_gso else grib_values(args.climate_dir / "orog")
-    out = compute_sso(fine, grid, grid_scale_orography=gso,
+    out = compute_sso(fine, grid, grid_scale_orography=gso, land_fraction=lsm_all,
                       prefilter_arcmin=args.prefilter_arcmin,
                       gradient_stencil=args.stencil, verbose=args.verbose)
 

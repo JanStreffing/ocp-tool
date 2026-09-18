@@ -200,6 +200,8 @@ def compute_sso(
     prefilter_arcmin: float = 3.0,
     highpass_km: Optional[float] = None,   # None means 1.5 * grid spacing
     grid_scale_orography: Optional[np.ndarray] = None,
+    land_fraction: Optional[np.ndarray] = None,
+    land_threshold: float = 0.5,
     verbose: bool = False,
 ) -> Dict[str, np.ndarray]:
     """Accumulate the Lott and Miller statistics onto ``grid``.
@@ -391,6 +393,20 @@ def compute_sso(
         ratio = np.where(K + R > 0.0, (K - R) / (K + R), 0.0)
     isor = np.sqrt(np.clip(ratio, 0.0, 1.0))
     anor = 0.5 * np.arctan2(M, L)
+
+    if land_fraction is not None:
+        # These fields are defined over land, and ECMWF ship them zeroed
+        # everywhere else: all 28782 sea cells of climate.v020/95_4 are exactly
+        # zero in all four. Without this, a cell holding a scrap of coast or an
+        # island carries a full-scale anisotropy on a sub-metre standard
+        # deviation, because isor is a ratio of the tensor's eigenvalues and so
+        # is scale free. On ETOPO1 that is 4446 sea cells with isor above 0.3,
+        # half of them with sdor below one metre. sdor and slor are polluted in
+        # the same places but at metres and 1e-7, so only the normalised field
+        # shows it.
+        sea = np.asarray(land_fraction, dtype=float) < land_threshold
+        for field in (sdor, isor, anor, slor):
+            field[sea] = 0.0
 
     return {"mean": mean, "sdor": sdor, "isor": isor, "anor": anor,
             "slor": slor, "n": n}
