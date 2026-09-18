@@ -198,7 +198,7 @@ def compute_sso(
     remove_mean_slope: bool = False,
     gradient_stencil: int = 1,
     prefilter_arcmin: float = 3.0,
-    highpass_km: Optional[float] = 150.0,
+    highpass_km: Optional[float] = None,   # None means 1.5 * grid spacing
     grid_scale_orography: Optional[np.ndarray] = None,
     verbose: bool = False,
 ) -> Dict[str, np.ndarray]:
@@ -216,8 +216,15 @@ def compute_sso(
     ``sdor`` from the residual too costs accuracy, ratio 0.68 against 0.78,
     for a correlation gain of 0.02.
 
-    Defaults were chosen against climate.v020/95_4 with ETOPO1; a different
-    source needs them rechosen with tools/validate_subgrid_orography.py.
+    ``prefilter_arcmin`` is a physical choice and not a free parameter: at
+    TCO319 refining it from 3' to 1' takes the slope ratio from 0.93 to 1.73,
+    because scales below about 5 km belong to TOFD rather than here.
+
+    Behaviour across resolution, TCO79 to TCO319, against climate.v020:
+    sdor holds at 0.76-0.80 and slor at 0.91-0.93, both with correlations near
+    0.85 and 0.90. isor is flat at 0.52 for TCO79 and TCO95 and then falls to
+    0.39 by TCO319, for reasons not understood; it is not sample starvation,
+    since nine times the fine points per box does not move it.
     """
     ds, flat, flon = fine.open()
     try:
@@ -278,7 +285,14 @@ def compute_sso(
     # form given in the same description. The smoothed version wins on the
     # anisotropy, 0.51 against 0.45, because it has no box-edge structure of
     # its own for the gradient to pick up.
-    if highpass_km is not None:
+    if highpass_km is None:
+        # The documentation calls this a "1-dx filter", so the cutoff is the
+        # grid length and is derived, not fitted. Confirmed across a fourfold
+        # resolution range: held at a fixed 150 km the slor ratio drifts from
+        # 0.910 at TCO79 to 0.955 at TCO319, while scaled with the grid it
+        # stays inside 0.911 to 0.927.
+        highpass_km = 1.5 * (360.0 / int(grid.pl.max())) * 111.0
+    if highpass_km > 0:
         from scipy.ndimage import gaussian_filter1d
 
         row_km = 180.0 / ny * 111.0
