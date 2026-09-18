@@ -61,6 +61,12 @@ def main():
     p.add_argument("--band-rows", type=int, default=600)
     p.add_argument("--exclude-ice-sheets", action="store_true",
                    help="drop Antarctica and Greenland, required with ETOPO1 Bed")
+    p.add_argument("--prefilter-arcmin", type=float, default=2.5,
+                   help="average the source to this scale first; ECMWF use 2'30\", about 5 km")
+    p.add_argument("--stencil", type=int, default=1,
+                   help="half-width of the gradient difference, in prefiltered points")
+    p.add_argument("--no-gso", action="store_true",
+                   help="skip the band-pass, for comparison against the old behaviour")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
 
@@ -72,7 +78,13 @@ def main():
     fine = FineOrography(path=args.fine, variable=args.variable,
                          band_rows=args.band_rows)
     print(f"fine orography: {args.fine.name}")
-    out = compute_sso(fine, grid, verbose=args.verbose)
+    # The grid-scale orography ECMWF subtract is the model's own, which ships
+    # in the same climate set. Pass it rather than letting the box means stand
+    # in for it, so the band-pass is the one they actually apply.
+    gso = None if args.no_gso else grib_values(args.climate_dir / "orog")
+    out = compute_sso(fine, grid, grid_scale_orography=gso,
+                      prefilter_arcmin=args.prefilter_arcmin,
+                      gradient_stencil=args.stencil, verbose=args.verbose)
 
     lsm, lat, lon = grib_values(args.climate_dir / "lsmoro", want_coords=True)
     mask = lsm > 0.5

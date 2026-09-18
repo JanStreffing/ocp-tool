@@ -9,8 +9,23 @@ Gaussian grid, all consumed by the Lott and Miller (1997) gravity-wave drag:
     anor  162  angle of the principal axis, from east                    [rad]
     slor  163  slope of the subgrid orography                            [-]
 
-They are derived from a fine orography by accumulating, over the fine points
-inside each model grid box, the gradient correlation tensor
+ECMWF build them to represent scales between 5 km and the grid length, in three
+steps (IFS orographic drag documentation, and Elvidge et al., ECMWF Tech Memo
+893):
+
+1. the 30 arc-second source is averaged to 2'30", about 5 km, because scales
+   below that belong to TOFD and the effective roughness scheme, not here;
+2. the grid-scale orography is subtracted from it, leaving a band-passed
+   residual that carries only 5 km to grid length;
+3. the statistics are accumulated from that residual, not from the orography
+   relative to its box mean.
+
+Skipping step 2 leaves the near-grid-scale ramp across each box inside the
+gradient tensor. That barely moves the standard deviation or the slope but it
+wrecks the anisotropy, which is a ratio of the tensor's eigenvalues and so is
+ruined by a term common to both.
+
+The statistics are the gradient correlation tensor of the residual
 
     K = 1/2 (<hx^2> + <hy^2>)     L = 1/2 (<hx^2> - <hy^2>)     M = <hx hy>
 
@@ -149,13 +164,42 @@ DeltaFn = Callable[[np.ndarray, np.ndarray], np.ndarray]
 # ---------------------------------------------------------------------------
 # The computation
 # ---------------------------------------------------------------------------
+def interpolate_to_fine(values: np.ndarray, grid: ReducedGaussian,
+                        flat: np.ndarray, flon: np.ndarray) -> np.ndarray:
+    """Bilinearly interpolate a reduced Gaussian field onto a regular lat/lon grid.
+
+    Bilinear and not nearest: a piecewise-constant grid-scale orography would put
+    a cliff at every box edge, and those cliffs would then dominate the very
+    gradient statistics this is subtracted from.
+    """
+    rl = grid.row_lat                      # north to south
+    jj = np.clip(np.searchsorted(-rl, -flat), 1, grid.nrows - 1)
+    j0, j1 = jj - 1, jj
+    wlat = (rl[j0] - flat) / (rl[j0] - rl[j1])
+    wlat = np.clip(wlat, 0.0, 1.0)
+
+    def row_interp(j):
+        step = (360.0 / grid.pl[j])[:, None]
+        x = (flon[None, :] % 360.0) / step
+        i0 = np.floor(x).astype(np.int64) % grid.pl[j][:, None]
+        i1 = (i0 + 1) % grid.pl[j][:, None]
+        w = x - np.floor(x)
+        base = grid.start[j][:, None]
+        return values[base + i0] * (1 - w) + values[base + i1] * w
+
+    return row_interp(j0) * (1 - wlat)[:, None] + row_interp(j1) * wlat[:, None]
+
+
 def compute_sso(
     fine: FineOrography,
     grid: ReducedGaussian,
     delta: Optional[DeltaFn] = None,
     sea_level_clip: bool = True,
-    remove_mean_slope: bool = True,
-    gradient_stencil: int = 3,
+    remove_mean_slope: bool = False,
+    gradient_stencil: int = 1,
+    prefilter_arcmin: float = 3.0,
+    highpass_km: Optional[float] = 150.0,
+    grid_scale_orography: Optional[np.ndarray] = None,
     verbose: bool = False,
 ) -> Dict[str, np.ndarray]:
     """Accumulate the Lott and Miller statistics onto ``grid``.
@@ -167,96 +211,117 @@ def compute_sso(
     and not the DEM: ETOPO1 at the default band size is about 100 MB rather than
     1.8 GB.
 
-    ``gradient_stencil`` is the half-width, in fine grid points, of the centred
-    difference used for the slope. It matters: on ETOPO1 the slor ratio against
-    ECMWF runs 1.69, 1.27, 0.88, 0.59 for stencils 1, 2, 4, 8, crossing one at
-    about 5 km, while the correlation stays near 0.89 throughout. So ECMWF's
-    slope is evaluated over roughly 5 km rather than at the raw DEM spacing,
-    which is what a filtering step in their preprocessing would do. The default
-    of 3 puts the ratio near one on ETOPO1; a different DEM needs it rechosen,
-    with tools/validate_subgrid_orography.py.
+    ``sdor`` is the spread of the prefiltered orography about its box mean.
+    ``slor``, ``isor`` and ``anor`` come from the band-passed residual: taking
+    ``sdor`` from the residual too costs accuracy, ratio 0.68 against 0.78,
+    for a correlation gain of 0.02.
+
+    Defaults were chosen against climate.v020/95_4 with ETOPO1; a different
+    source needs them rechosen with tools/validate_subgrid_orography.py.
     """
     ds, flat, flon = fine.open()
     try:
         ny, nx = len(flat), len(flon)
-        dlon = np.radians(360.0 / nx)
-        dy = RA * np.radians(180.0 / ny)
-
-        acc = {k: np.zeros(grid.size) for k in
-               ("n", "h", "h2", "gx", "gy", "gx2", "gy2", "gxy")}
-
-        for j0 in range(0, ny, fine.band_rows):
-            j1 = min(j0 + fine.band_rows, ny)
-            # halo of the stencil width, so the meridional gradient is centred
-            # everywhere in the band
-            st = max(int(gradient_stencil), 1)
-            a, b = max(j0 - st, 0), min(j1 + st, ny)
-            h = np.asarray(ds[fine.variable][a:b, :], dtype=np.float64)
-            if sea_level_clip:
-                # The IFS orography is zero over sea, not bathymetry.
-                h = np.maximum(h, 0.0)
-            if delta is not None:
-                h = h + delta(flat[a:b], flon)
-
-            # Zonal spacing shrinks as cos(lat) and reaches zero at the pole;
-            # clip so the polar rows cannot produce an infinite gradient.
-            dx = (RA * np.cos(np.radians(flat[a:b]))[:, None] * dlon).clip(1.0)
-            gx = ((np.roll(h, -st, axis=1) - np.roll(h, st, axis=1))
-                  / (2.0 * st * dx))
-            gy = np.empty_like(h)
-            gy[st:-st] = (h[2 * st:] - h[:-2 * st]) / (2.0 * st * dy)
-            gy[:st], gy[-st:] = gy[st], gy[-st - 1]
-
-            lo = j0 - a
-            hi = lo + (j1 - j0)
-            hb, gxb, gyb = h[lo:hi], gx[lo:hi], gy[lo:hi]
-
-            rows = np.abs(
-                grid.row_lat[None, :] - flat[j0:j1][:, None]
-            ).argmin(axis=1)
-
-            for k, r in enumerate(rows):
-                col = np.floor(
-                    (flon % 360.0) / (360.0 / grid.pl[r])
-                ).astype(np.int64) % grid.pl[r]
-                idx = grid.start[r] + col
-                acc["n"] += np.bincount(idx, minlength=grid.size)
-                acc["h"] += np.bincount(idx, weights=hb[k], minlength=grid.size)
-                acc["h2"] += np.bincount(idx, weights=hb[k] ** 2,
-                                         minlength=grid.size)
-                acc["gx"] += np.bincount(idx, weights=gxb[k],
-                                         minlength=grid.size)
-                acc["gy"] += np.bincount(idx, weights=gyb[k],
-                                         minlength=grid.size)
-                acc["gx2"] += np.bincount(idx, weights=gxb[k] ** 2,
-                                          minlength=grid.size)
-                acc["gy2"] += np.bincount(idx, weights=gyb[k] ** 2,
-                                          minlength=grid.size)
-                acc["gxy"] += np.bincount(idx, weights=gxb[k] * gyb[k],
-                                          minlength=grid.size)
-            if verbose:
-                print(f"    rows {j0}-{j1} of {ny}")
+        src_arcmin = 360.0 * 60.0 / nx
+        blk = max(int(round(prefilter_arcmin / src_arcmin)), 1)
+        if verbose:
+            print(f"    source {src_arcmin:.2f}', prefilter block {blk} "
+                  f"({blk * src_arcmin:.2f}')")
+        # Step 1: average the source to about 5 km. Trim to a whole number of
+        # blocks rather than padding, so no block is a partial average.
+        ny2, nx2 = (ny // blk) * blk, (nx // blk) * blk
+        h = np.asarray(ds[fine.variable][:ny2, :nx2], dtype=np.float32)
     finally:
         ds.close()
 
-    empty = int((acc["n"] == 0).sum())
-    if empty:
-        raise RuntimeError(
-            f"{empty} of {grid.size} target boxes received no fine point. The "
-            "fine orography is too coarse for this target grid."
-        )
+    if sea_level_clip:
+        # The IFS orography is zero over sea, not bathymetry.
+        h = np.maximum(h, 0.0)
+    flat = flat[:ny2].reshape(-1, blk).mean(axis=1)
+    flon = flon[:nx2].reshape(-1, blk).mean(axis=1)
+    h = h.reshape(ny2 // blk, blk, nx2 // blk, blk).mean(axis=(1, 3))
+    ny, nx = h.shape
+    if delta is not None:
+        h = h + delta(flat, flon).astype(np.float32)
 
+    # Box mean and standard deviation come from the prefiltered orography
+    # itself: they describe the box, not the band-passed residual.
+    rows = np.abs(grid.row_lat[None, :] - flat[:, None]).argmin(axis=1)
+    cols = [np.floor((flon % 360.0) / (360.0 / grid.pl[r])).astype(np.int64)
+            % grid.pl[r] for r in range(grid.nrows)]
+    idx_of = lambda r: grid.start[r] + cols[r]
+
+    acc = {k: np.zeros(grid.size) for k in
+           ("n", "h", "h2", "gx", "gy", "gx2", "gy2", "gxy")}
+    for k, r in enumerate(rows):
+        idx = idx_of(r)
+        acc["n"] += np.bincount(idx, minlength=grid.size)
+        acc["h"] += np.bincount(idx, weights=h[k], minlength=grid.size)
+        acc["h2"] += np.bincount(idx, weights=h[k].astype(np.float64) ** 2,
+                                 minlength=grid.size)
+
+    if (acc["n"] == 0).any():
+        raise RuntimeError(
+            f"{int((acc['n'] == 0).sum())} of {grid.size} target boxes received "
+            "no fine point. The prefiltered orography is too coarse for this "
+            "target grid; lower prefilter_arcmin."
+        )
     n = acc["n"]
     mean = acc["h"] / n
     sdor = np.sqrt(np.maximum(acc["h2"] / n - mean ** 2, 0.0))
 
+    # Step 2: band-pass, so the tensor sees only 5 km to grid length.
+    #
+    # Two ways to remove the large scales. The IFS uses a smoothed version of
+    # the prefiltered source, which is what highpass_km does; subtracting the
+    # grid-scale orography interpolated back onto the fine grid is the other
+    # form given in the same description. The smoothed version wins on the
+    # anisotropy, 0.51 against 0.45, because it has no box-edge structure of
+    # its own for the gradient to pick up.
+    if highpass_km is not None:
+        from scipy.ndimage import gaussian_filter1d
+
+        row_km = 180.0 / ny * 111.0
+        sm = gaussian_filter1d(h, highpass_km / row_km, axis=0, mode="nearest")
+        # Zonal spacing shrinks as cos(lat), so a single sigma in grid points
+        # would smooth over far too short a distance near the poles, which is
+        # exactly where the ice sheets are. Apply it in latitude bands of a few
+        # degrees, each with its own sigma.
+        band = max(int(round(3.0 / (180.0 / ny))), 1)
+        for b0 in range(0, ny, band):
+            b1 = min(b0 + band, ny)
+            coslat = max(np.cos(np.radians(flat[b0:b1])).mean(), 1e-3)
+            sig = highpass_km / (360.0 / nx * 111.0 * coslat)
+            sm[b0:b1] = gaussian_filter1d(sm[b0:b1], sig, axis=1, mode="wrap")
+        resid = h - sm
+    else:
+        gso = mean if grid_scale_orography is None else np.asarray(
+            grid_scale_orography, dtype=float)
+        resid = h - interpolate_to_fine(gso, grid, flat, flon).astype(np.float32)
+
+    # Step 3: the gradient correlation tensor of the residual.
+    st = max(int(gradient_stencil), 1)
+    dlon = np.radians(360.0 / nx)
+    dy = RA * np.radians(180.0 / ny)
+    dx = (RA * np.cos(np.radians(flat))[:, None] * dlon).clip(1.0)
+    gx = (np.roll(resid, -st, axis=1) - np.roll(resid, st, axis=1)) / (2.0 * st * dx)
+    gy = np.empty_like(resid)
+    gy[st:-st] = (resid[2 * st:] - resid[:-2 * st]) / (2.0 * st * dy)
+    gy[:st], gy[-st:] = gy[st], gy[-st - 1]
+
+    for k, r in enumerate(rows):
+        idx = idx_of(r)
+        acc["gx"] += np.bincount(idx, weights=gx[k], minlength=grid.size)
+        acc["gy"] += np.bincount(idx, weights=gy[k], minlength=grid.size)
+        acc["gx2"] += np.bincount(idx, weights=gx[k].astype(np.float64) ** 2,
+                                  minlength=grid.size)
+        acc["gy2"] += np.bincount(idx, weights=gy[k].astype(np.float64) ** 2,
+                                  minlength=grid.size)
+        acc["gxy"] += np.bincount(idx, weights=(gx[k] * gy[k]).astype(np.float64),
+                                  minlength=grid.size)
+
     gx2, gy2, gxy = acc["gx2"] / n, acc["gy2"] / n, acc["gxy"] / n
     if remove_mean_slope:
-        # Baines and Palmer take the statistics of the orography left after the
-        # resolved plane through the box is removed. Removing a least-squares
-        # plane is the same as subtracting the mean gradient, so the second
-        # moments become covariances. Without this the resolved slope of a
-        # mountain range is counted as subgrid slope.
         gxm, gym = acc["gx"] / n, acc["gy"] / n
         gx2 = gx2 - gxm ** 2
         gy2 = gy2 - gym ** 2
