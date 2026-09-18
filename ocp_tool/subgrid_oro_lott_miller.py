@@ -35,13 +35,18 @@ and then
     isor = sqrt((K - sqrt(L^2+M^2)) / (K + sqrt(L^2+M^2)))
     anor = 1/2 atan2(M, L)
 
-This module exists because ``paleo_subgrid_oro.py`` cannot be used for
-OpenIFS. That path shells out to ``calnoro``, an ECHAM tool implementing a
-different definition: fed ECMWF's own 9 km orography it returns a global mean
-sdor of 43.3 against ECMWF's 60.4, and a point-by-point RMS difference of 74.8
-against a field mean of 60.4. The gap is definitional, not resolution: moving
-its input from ECHAM5 T511 (26 km, 2007) to ECMWF TCO1279 (9 km) closed only
-about 9% of it. ``paleo_subgrid_oro.py`` stays as it is for ECHAM.
+There are now two ways to produce these fields in ocp-tool, and the difference
+between them is the method, not the use case:
+
+  paleo_subgrid_oro.py      shells out to calnoro, for ECHAM
+  subgrid_oro_lott_miller.py  this one, Lott and Miller, for OpenIFS
+
+calnoro implements a different definition and cannot serve OpenIFS. Fed
+ECMWF's own 9 km orography it returns a global mean sdor of 43.3 against
+ECMWF's 60.4, with a point-by-point RMS difference of 74.8 against a field mean
+of 60.4. The gap is definitional, not resolution: moving its input from ECHAM5
+T511 (26 km, 2007) to ECMWF TCO1279 (9 km) closed only about 9% of it. The
+calnoro path is correct for ECHAM and is left alone.
 
 Validation target is what ECMWF ships beside the model, for example
 ``climate.v020/95_4/{stdgwd,isogwd,anggwd,slogwd}``, which is where the fields
