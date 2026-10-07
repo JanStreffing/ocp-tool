@@ -12,7 +12,7 @@ import xarray as xr
 from netCDF4 import Dataset
 from scipy.spatial import cKDTree
 
-from .config import OCPConfig
+from .config import OCPConfig, truncation_prefix
 from .gaussian_grids import GaussianGrid
 from .lsm import LSMData
 
@@ -41,6 +41,9 @@ def write_oasis_grid_files(
     # Generate LPJG OASIS grid name
     if config.atmosphere.truncation_type == 'cubic-octahedral':
         lpjg_oasis_name = f'TCO{nn-1}-land'
+    elif config.atmosphere.truncation_type == 'quadratic':
+        # N does not map back to one truncation number here, so take it as given
+        lpjg_oasis_name = f'TQ{resolution}-land'
     else:
         lpjg_oasis_name = f'TL{nn*2-1}-land'
     
@@ -660,7 +663,7 @@ def _interpolate_ndep_files(
     """Interpolate nitrogen deposition files."""
     truncation_type = config.atmosphere.truncation_type
     resolution = config.atmosphere.resolution_list[0]  # Use first resolution
-    ifs_grid = f"TCO{resolution}" if truncation_type == "cubic-octahedral" else f"TL{resolution}"
+    ifs_grid = f"{truncation_prefix(truncation_type)}{resolution}"
     
     ndep_files = [
         'drynhx_TL255_hist_d1.nc', 'wetnhx_TL255_hist_d1.nc',

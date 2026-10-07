@@ -11,11 +11,44 @@ import yaml
 from .cycles import AUTO, CycleSpec, resolve_cycle
 
 
+
+TRUNCATION_PREFIXES = {
+    'cubic-octahedral': 'TCO',
+    'linear': 'TL',
+    'quadratic': 'TQ',
+}
+
+
+def truncation_prefix(truncation_type: str) -> str:
+    """Grid name prefix for a truncation type: TCO, TL or TQ."""
+    try:
+        return TRUNCATION_PREFIXES[truncation_type]
+    except KeyError:
+        raise ValueError(f"Unknown truncation type: {truncation_type}")
+
+
+def gaussian_number(resolution: int, truncation_type: str) -> int:
+    """
+    Gaussian number N (latitudes between pole and equator) of the grid that
+    goes with a spectral truncation.
+
+    linear            N = (T + 1) / 2     reduced grid,    e.g. TL159  -> N80
+    quadratic         N = (3T + 1) / 4    full grid,       e.g. TQ21   -> N16
+    cubic-octahedral  N = T + 1           octahedral grid, e.g. TCO95  -> O96
+    """
+    if truncation_type == 'linear':
+        return int(resolution / 2 + 0.5)
+    if truncation_type == 'quadratic':
+        return -(-(3 * resolution + 1) // 4)
+    if truncation_type == 'cubic-octahedral':
+        return resolution + 1
+    raise ValueError(f"Unknown truncation type: {truncation_type}")
+
 @dataclass
 class AtmosphereConfig:
     """Atmosphere grid configuration."""
     resolution_list: List[int]
-    truncation_type: str  # 'linear' or 'cubic-octahedral'
+    truncation_type: str  # 'linear', 'quadratic' or 'cubic-octahedral'
     experiment_name: str  # 4-digit ECMWF experiment code
     # OpenIFS cycle of the ICMGG/ICMSH input files: '43r3', '48r1' or 'auto'.
     # See ocp_tool/cycles.py — governs the snow-field layout.
@@ -266,6 +299,10 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
         reduced_grid_key = 'gaussian_grids_octahedral_reduced'
     elif truncation_type == 'linear':
         reduced_grid_key = 'gaussian_grids_linear_reduced'
+    elif truncation_type == 'quadratic':
+        # Full (regular) Gaussian grid: there is no reduced grid file, the
+        # grid is computed and cached next to the full-grid descriptions
+        reduced_grid_key = 'gaussian_grids_full'
     else:
         raise ValueError(f"Unknown truncation type: {truncation_type}")
     
@@ -289,7 +326,7 @@ def load_config(config_path: Union[str, Path]) -> OCPConfig:
     # Format: TCO{resolution}_{ocean_grid} (e.g., TCO95_CORE2, TCO319_CORE3)
     resolution = raw['atmosphere']['resolution_list'][0]  # Use first resolution
     ocean_grid = raw['ocean']['grid_name']
-    trunc_prefix = "TCO" if truncation_type == "cubic-octahedral" else "TL"
+    trunc_prefix = truncation_prefix(truncation_type)
     output_subdir = f"{trunc_prefix}{resolution}_{ocean_grid}"
     
     output_base = root_dir / "output" / output_subdir

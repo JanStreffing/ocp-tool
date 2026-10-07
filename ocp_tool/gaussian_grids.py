@@ -14,7 +14,7 @@ from netCDF4 import Dataset
 from collections import defaultdict
 from scipy.spatial import ConvexHull
 
-from .config import OCPConfig, EARTH_RADIUS_M
+from .config import OCPConfig, EARTH_RADIUS_M, gaussian_number
 
 
 @dataclass
@@ -45,7 +45,7 @@ def read_grid_file(
         resolution: Truncation number (e.g., 95 for TCO95)
         reduced_grid_path: Path to reduced grid files
         full_grid_path: Path to full grid files
-        truncation_type: 'linear' or 'cubic-octahedral'
+        truncation_type: 'linear', 'quadratic' or 'cubic-octahedral'
         experiment_name: OpenIFS experiment name
         openifs_path: Path to OpenIFS input files
         verbose: Print debug info
@@ -53,12 +53,17 @@ def read_grid_file(
     Returns:
         Tuple of (lines from grid file, NN parameter)
     """
+    nn = gaussian_number(resolution, truncation_type)
     if truncation_type == 'linear':
-        nn = int(resolution / 2 + 0.5)
         grid_file = reduced_grid_path / f'n{nn}_reduced.txt'
     elif truncation_type == 'cubic-octahedral':
-        nn = resolution + 1
         grid_file = reduced_grid_path / f'o{nn}_reduced.txt'
+    elif truncation_type == 'quadratic':
+        # Full Gaussian grid: every row has 4N points, so the description can
+        # be computed and does not depend on an ICMGG file
+        grid_file = full_grid_path / f'f{nn}_full.txt'
+        if not grid_file.exists():
+            _write_full_gaussian_grid_file(nn, grid_file)
     else:
         raise ValueError(f"Unknown truncation type: {truncation_type}")
     
@@ -81,6 +86,25 @@ def read_grid_file(
             lines = f.readlines()
     
     return lines, nn
+
+
+def _write_full_gaussian_grid_file(nn: int, grid_file: Path) -> None:
+    """
+    Write the description of a full (regular) Gaussian grid N{nn} in the same
+    four-column format as the reduced grid files: 2N latitudes from north to
+    south, each with 4N points.
+    """
+    # Gaussian latitudes are the arcsines of the Gauss-Legendre nodes
+    nodes, _ = np.polynomial.legendre.leggauss(2 * nn)
+    latitudes = np.degrees(np.arcsin(nodes))[::-1]
+
+    grid_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(grid_file, 'w') as f:
+        f.write('latitude reduced regular latitude \n')
+        f.write('number points points \n')
+        f.write(' ------- ------- ------- ---------- \n')
+        for ilat, lat in enumerate(latitudes):
+            f.write(f'{ilat+1} {4*nn} {4*nn} {lat:.10f} \n')
 
 
 def _read_grid_from_icmgg(

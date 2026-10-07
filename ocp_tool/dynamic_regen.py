@@ -37,6 +37,8 @@ from pathlib import Path
 
 import yaml
 
+from .config import truncation_prefix
+
 
 def _build_config(template, mesh_dir, grid_name, ocp_tool_dir, generate_rmp,
                   write_oasis_grid=None):
@@ -109,7 +111,7 @@ def regenerate_for_submesh(
     # Collect products from output/TCO{res}_{grid_name}/.
     resolution = raw["atmosphere"]["resolution_list"][0]
     trunc = raw["atmosphere"]["truncation_type"]
-    prefix = "TCO" if trunc == "cubic-octahedral" else "TL"
+    prefix = truncation_prefix(trunc)
     out_base = ocp_tool_dir / "output" / f"{prefix}{resolution}_{grid_name}"
     oasis_src = out_base / "oasis_mct3_input"
     icmgg_name = f"ICMGG{raw['atmosphere']['experiment_name']}INIT_{grid_name}"

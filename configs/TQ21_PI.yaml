@@ -1,0 +1,44 @@
+# OCP-Tool Configuration
+# OpenIFS Coupling Preparation Tool
+# Configuration: TQ21 + PI (smallest coupled setup, for laptops and CI)
+#
+# Atmosphere: spectral truncation 21 on the full Gaussian grid N16 (64 x 32,
+# 2048 points). The initial files are ECMWF's T21 test case, experiment epc8,
+# which the OpenIFS build downloads to build/ifs-test/.cache/t21/inidata/.
+# Ocean: the FESOM2 PI mesh (3140 nodes) from the FESOM repository,
+# test/meshes/pi/.
+
+# Atmosphere grid settings
+atmosphere:
+  resolution_list: [21]  # TQ21
+  truncation_type: "quadratic"
+  experiment_name: "epc8"  # ECMWF T21 forecast test case
+
+# Ocean grid settings
+ocean:
+  grid_name: "pi"  # lower case, as esm_tools names the FESOM resolution
+  has_ice_cavities: false
+  # mesh.nc is generated from the ASCII mesh files next to it if missing
+  mesh_file: "/pool/fesom2/pi/mesh.nc"
+
+# Basin modifications for runoff
+runoff:
+  manual_basin_removal: []
+
+# Paths (relative to auto-detected root_dir, or absolute)
+# Output dirs auto-computed as: output/{TCO|TL|TQ}{resolution}_{ocean_grid}/
+paths:
+  input:
+    fesom_mesh: "input/fesom_mesh/"
+    gaussian_grids_full: "input/gaussian_grids_full/"
+    gaussian_grids_octahedral_reduced: "input/gaussian_grids_octahedral_reduced/"
+    gaussian_grids_linear_reduced: "input/gaussian_grids_linear_reduced/"
+    openifs_default: "input/openifs_input_default/"
+    runoff_default: "input/runoff_map_default/"
+    lpj_guess: "input/lpj-guess/"
+
+# Processing options
+options:
+  verbose: true
+  parallel_workers: 4
+  use_dask: true

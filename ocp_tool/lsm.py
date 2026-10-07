@@ -12,7 +12,7 @@ import numpy as np
 import gribapi
 from shutil import copy2
 
-from .config import LakeConfig, OCPConfig
+from .config import LakeConfig, OCPConfig, truncation_prefix
 from .cycles import check_lake_fields
 from .gaussian_grids import GaussianGrid
 
@@ -586,12 +586,8 @@ def create_slt_output_for_lpjg(
     
     # Generate output filename with ocean grid name
     suffix = config.options.output_suffix
-    if config.atmosphere.truncation_type == 'cubic-octahedral':
-        slt_output_name = f'slt_TCO{resolution}_{config.ocean.grid_name}{suffix}.nc'
-    elif config.atmosphere.truncation_type == 'linear':
-        slt_output_name = f'slt_TL{resolution}_{config.ocean.grid_name}{suffix}.nc'
-    else:
-        raise ValueError(f"Unknown truncation type: {config.atmosphere.truncation_type}")
+    prefix = truncation_prefix(config.atmosphere.truncation_type)
+    slt_output_name = f'slt_{prefix}{resolution}_{config.ocean.grid_name}{suffix}.nc'
     
     slt_output_path = config.output_paths.lpj_guess / slt_output_name
     temp_grib_file = config.output_paths.lpj_guess / 'temp_slt_var43.grb'
