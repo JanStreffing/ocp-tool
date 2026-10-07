@@ -55,7 +55,7 @@ def run_ocp_tool(config: OCPConfig) -> None:
     for resolution in config.atmosphere.resolution_list:
         print(f"\n{'='*60}")
         print(f" Processing resolution T{resolution}")
-        print(f" Output: ./output/TCO{resolution}_{config.ocean.grid_name}")
+        print(f" Output: {config.output_paths.oasis.parent}")
         print(f"{'='*60}\n")
         
         # Step 0: Create Output directories
