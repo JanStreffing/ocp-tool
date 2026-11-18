@@ -16,6 +16,9 @@ nohup.out
 # Python setuptools etc
 *.egg-info
 
+# Sphinx build output
+docs/build/
+
 # VSCode
 .vscode
 input/ocean_input_default/

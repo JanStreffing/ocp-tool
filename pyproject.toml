@@ -37,9 +37,10 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/pgierz/ocp-tool"
-Repository = "https://github.com/pgierz/ocp-tool"
-Issues = "https://github.com/pgierz/ocp-tool/issues"
+Homepage = "https://github.com/JanStreffing/ocp-tool"
+Documentation = "https://ocp-tool.readthedocs.io"
+Repository = "https://github.com/JanStreffing/ocp-tool"
+Issues = "https://github.com/JanStreffing/ocp-tool/issues"
 
 [project.entry-points."scriptengine.tasks"]
 "ocpt.main" = "ocp_tool.scriptengine_task:OCPTool"
@@ -59,11 +60,8 @@ jupyter = [
     "ipykernel",
 ]
 docs = [
-    "sphinx",
-    "sphinx-rtd-theme",
-    "nbsphinx",
-    "myst-parser",
-    "sphinx-autoapi",
+    "sphinx>=7.2",
+    "sphinx-rtd-theme>=2.0",
 ]
 
 [tool.setuptools]
@@ -111,11 +109,8 @@ flake8 = "*"
 mypy = "*"
 
 [tool.pixi.feature.docs.dependencies]
-sphinx = "*"
-sphinx-rtd-theme = "*"
-nbsphinx = "*"
-myst-parser = "*"
-sphinx-autoapi = "*"
+sphinx = ">=7.2"
+sphinx-rtd-theme = ">=2.0"
 
 [tool.pixi.environments]
 default = { solve-group = "default" }
