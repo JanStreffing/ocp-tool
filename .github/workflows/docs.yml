@@ -1,42 +1,48 @@
 name: Documentation
 
+# Builds the docs the same way Read the Docs does (docs/requirements.txt only,
+# package dependencies mocked in conf.py), so a warning that would fail the
+# Read the Docs build fails here first.
+
 on:
   push:
     branches: [ master, main ]
     paths:
       - 'docs/**'
       - 'ocp_tool/**'
+      - 'run_ocp_tool.py'
+      - '.readthedocs.yaml'
+      - '.github/workflows/docs.yml'
   pull_request:
     branches: [ master, main ]
     paths:
       - 'docs/**'
       - 'ocp_tool/**'
+      - 'run_ocp_tool.py'
+      - '.readthedocs.yaml'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 jobs:
   build-docs:
     name: Build Documentation
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      
+          python-version: '3.12'
+
       - name: Install dependencies
-        run: |
-          pip install sphinx alabaster numpy scipy xarray netCDF4 pyyaml matplotlib cartopy
-          pip install -e .
-      
+        run: pip install -r docs/requirements.txt
+
       - name: Build documentation
-        run: |
-          cd docs
-          sphinx-build -b html source build/html
-      
+        run: sphinx-build -W --keep-going -b html docs/source docs/build/html
+
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4
         with:

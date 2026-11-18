@@ -389,6 +389,7 @@ def read_fesom_grid_polygon(
     generate mesh.nc from FESOM ASCII files using pyfesom2.
     
     Algorithm:
+
     1. Build ocean boundary from coastal edges + calving front edges
     2. Create convex hulls for small disconnected cavity components
     3. Point is LAND if: outside ocean polygon OR inside cavity hull

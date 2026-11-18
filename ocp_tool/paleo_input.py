@@ -626,11 +626,13 @@ def modify_ice_snow(
 
     Parameters
     ----------
-    icmgg_file : the file being modified, read for its current snow layers
+    icmgg_file : Path
+        The file being modified, read for its current snow layers.
 
     Returns
     -------
-    dict of replacement key → values
+    dict
+        Replacement key → values.
     """
     paleo = config.paleo
     cycle = config.cycle
@@ -887,6 +889,7 @@ def interpolate_remaining_fields(
     Interpolate remaining GRIB fields for added/drowned grid points.
 
     For each field:
+
     - Drowned points: fill from surrounding ocean values
     - Added land + reduced ice sheet points: fill from surrounding land values
     - Combine both contributions
@@ -957,13 +960,17 @@ def modify_paleo_input(
 
     Parameters
     ----------
-    config : OCPConfig with paleo section enabled
-    grid : Gaussian grid from step 1
-    lsm_data : LSMData from step 3 (land-sea mask processing)
+    config : OCPConfig
+        With the paleo section enabled.
+    grid : GaussianGrid
+        Gaussian grid from step 1.
+    lsm_data : LSMData
+        From step 3 (land-sea mask processing).
 
     Returns
     -------
-    Path to the modified ICMGG file
+    Path
+        The modified ICMGG file.
     """
     paleo = config.paleo
     if not paleo or not paleo.enabled:

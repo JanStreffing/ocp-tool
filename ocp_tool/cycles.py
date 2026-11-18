@@ -224,9 +224,12 @@ def resolve_cycle(
 
     Parameters
     ----------
-    requested : cycle name from the config, or ``'auto'`` / ``None``
-    grib_file : input ICMGG file used for detection / verification
-    verbose : print the outcome
+    requested : str or None
+        Cycle name from the config, or ``'auto'`` / ``None``.
+    grib_file : str or Path, optional
+        Input ICMGG file used for detection / verification.
+    verbose : bool
+        Print the outcome.
 
     Raises
     ------

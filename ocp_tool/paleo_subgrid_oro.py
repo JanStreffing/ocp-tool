@@ -2,6 +2,7 @@
 Paleo subgrid-scale orography module for OCP-Tool.
 
 Replaces convert_topodata.sh + calnoro + create_subgrid_oro.sh + mod_oro_oifs.sh:
+
 1. Prepare topography input for calnoro (remap to r720x360, rename to OROMEA)
 2. Run compiled calnoro binary via subprocess
 3. Post-process calnoro output (SERVICE format → NetCDF, rename variables)
@@ -177,11 +178,17 @@ def run_calnoro(
 
     Parameters
     ----------
-    config : with paleo.calnoro_binary set
-    work_dir : directory containing topodata.nc, output goes here
-    truncation : spectral truncation (63 for T63)
+    config : OCPConfig
+        With ``paleo.calnoro_binary`` set.
+    work_dir : Path
+        Directory containing topodata.nc; the output goes here too.
+    truncation : int
+        Spectral truncation (63 for T63).
 
-    Returns path to the output sso_par_fil.srv file.
+    Returns
+    -------
+    Path
+        The output sso_par_fil.srv file.
     """
     paleo = config.paleo
 
@@ -257,6 +264,7 @@ def apply_subgrid_orography(
     Map calnoro SSO fields to OpenIFS GRIB codes and interpolate to Gaussian grid.
 
     Applies unit conversions:
+
     - OROSIG (slope): ×10
     - OROTHE (angle): degrees → radians
 
@@ -325,13 +333,17 @@ def modify_paleo_subgrid_orography(
 
     Parameters
     ----------
-    config : OCPConfig with paleo section
-    grid : Gaussian grid
-    masks : derivative masks from create_paleo_masks()
+    config : OCPConfig
+        With the paleo section enabled.
+    grid : GaussianGrid
+        The target Gaussian grid.
+    masks : dict of str to ndarray
+        Derivative masks from :func:`ocp_tool.paleo_input.create_paleo_masks`.
 
     Returns
     -------
-    Path to the modified ICMGG file
+    Path
+        The modified ICMGG file.
     """
     paleo = config.paleo
     verbose = config.options.verbose

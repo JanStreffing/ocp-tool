@@ -1,0 +1,6 @@
+sphinx>=7.2
+sphinx-rtd-theme>=2.0
+# Imported for real by autodoc, because mocking them breaks module-level code
+# (numpy arithmetic in constants, dataclass defaults, yaml in config).
+numpy
+pyyaml
