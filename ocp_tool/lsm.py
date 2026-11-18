@@ -273,7 +273,8 @@ def restore_lake_cover(
 
     Returns
     -------
-    int : how many cells were restored.
+    int
+        How many cells were restored.
     """
     if not changed_to_land:
         return 0

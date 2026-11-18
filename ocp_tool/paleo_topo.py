@@ -158,6 +158,7 @@ def modify_topography(
     Modify ICMSH topography using the anomaly method.
 
     Steps:
+
     1. Read modern + paleo topography from reconstruction NetCDF files
     2. Clip below sea level to 0
     3. Distance-weighted fill for land mask gaps

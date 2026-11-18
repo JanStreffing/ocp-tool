@@ -2,6 +2,7 @@
 OCP-Tool: OpenIFS Coupling Preparation Tool
 
 Modules:
+
 - config: Configuration loading and dataclasses
 - cycles: OpenIFS cycle definitions (snow-field layout per cycle)
 - grids: Gaussian grid processing
