@@ -81,3 +81,15 @@ html_context = {
     'github_version': 'master',
     'conf_py_path': '/docs/source/',
 }
+
+
+def _no_edit_link_without_source(app, pagename, templatename, context, doctree):
+    # The theme's hasdoc() check is true for genindex, which has no .rst, so
+    # its "Edit on GitHub" link is a 404. Pages built without a doctree have
+    # no source file to edit.
+    if doctree is None:
+        context['display_github'] = False
+
+
+def setup(app):
+    app.connect('html-page-context', _no_edit_link_without_source)
